@@ -10,6 +10,10 @@ Full design rationale — why plan-then-execute over ReAct, the memory model,
 the MCP boundary, eval strategy, and rejected alternatives — is in
 [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+**Showcase site:** https://ai-product-engineer-copilot.vercel.app — a
+friendly walkthrough of the architecture, all 6 phases, the rigor layer, and
+the two extracted packages. Source in [`web/`](./web).
+
 **This code is public for portfolio/demonstration purposes only — see
 [`LICENSE`](./LICENSE). It is not open source and may not be copied, reused,
 or redistributed.**
