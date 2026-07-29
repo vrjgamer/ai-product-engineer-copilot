@@ -1,28 +1,30 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { links } from "@/lib/content";
+import { DemoStage } from "@/components/demo/demo-stage";
 
 export default function DemoPage() {
   return (
-    <div className="mx-auto flex min-h-full max-w-2xl flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-      <Card className="w-full p-10">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Live demo — coming soon
-        </h1>
-        <p className="mt-4 text-muted-foreground">
-          This page is reserved for an interactive run: submit a PRD request
-          and watch the planner, executor, and MCP tool calls happen in real
-          time, backed by a real model endpoint instead of the deterministic
-          fixtures the test suite uses.
-        </p>
-        <p className="mt-4 text-sm text-muted-foreground">
-          Until then, everything on the main page is real, tested, working
-          code — just not wired to a live model call from this site yet.
-        </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href="/" className={buttonVariants()}>
-            Back to the overview
+    <div className="mx-auto max-w-5xl flex-1 px-6 py-16">
+      <div className="mb-10 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Badge variant="secondary" className="mb-3 font-mono text-xs">
+            Simulated run — no live model call
+          </Badge>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Watch the agent work
+          </h1>
+          <p className="mt-3 max-w-xl text-muted-foreground">
+            A scripted replay of a real run: the planner, the two MCP tool
+            calls, generation, and the judge — using the exact fixture data
+            from the project&apos;s own tests. It&apos;s not calling a live
+            model yet, but nothing here is invented for the demo either.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/" className={buttonVariants({ variant: "outline" })}>
+            ← Overview
           </Link>
           <Link
             href={links.repo}
@@ -33,7 +35,14 @@ export default function DemoPage() {
             View the code ↗
           </Link>
         </div>
-      </Card>
+      </div>
+
+      <DemoStage />
+
+      <p className="mt-10 text-sm text-muted-foreground">
+        Once a live model endpoint is wired in, this same layout runs a real
+        planner/executor loop instead of a script.
+      </p>
     </div>
   );
 }
