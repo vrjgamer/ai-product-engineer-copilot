@@ -16,10 +16,11 @@ export default function DemoPage() {
             Watch the agent work
           </h1>
           <p className="mt-3 max-w-xl text-muted-foreground">
-            A scripted replay of a real run: the planner, the two MCP tool
-            calls, generation, and the judge — using the exact fixture data
-            from the project&apos;s own tests. It&apos;s not calling a live
-            model yet, but nothing here is invented for the demo either.
+            A scripted walkthrough of the planner, the two MCP tool calls,
+            generation, and the judge. The two tool call outputs are the
+            exact fixture data from the project&apos;s own tests — every
+            figure the generated text and the judge reference traces back to
+            one of them, nothing asserted without a source.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

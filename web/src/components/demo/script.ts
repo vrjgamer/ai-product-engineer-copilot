@@ -48,7 +48,7 @@ export const demoSteps: DemoStep[] = [
     title: "Generate: problem_statement",
     subtitle: "Folds retrieved context + cited metric into prose",
     output:
-      "Problem Statement\nThe onboarding flow reduces signup drop-off by front-loading value. Today, activation rate sits at 42% (source: product-analytics) — the redesign targets pushing this past 55% within two quarters.",
+      "Problem Statement\nThe onboarding flow reduces signup drop-off by front-loading value. Today, activation rate sits at 42% (source: product-analytics) — the redesign's success metric is moving this number.",
   },
   {
     id: "judge",
@@ -56,6 +56,6 @@ export const demoSteps: DemoStep[] = [
     title: "Judge: score against rubric",
     subtitle: "Sanity-anchored, bias-checked",
     output:
-      'score: 0.92 — cites a grounded metric (42%, product-analytics) and reflects the retrieved passage directly. No fabricated figures detected.',
+      'score: 0.92 — every figure traces to a tool result (42%, product-analytics); nothing in this section was asserted without a source.',
   },
 ];
