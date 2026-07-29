@@ -1,0 +1,24 @@
+{
+  "name": "ai-product-engineer-copilot",
+  "version": "1.0.0",
+  "description": "Multi-step AI agent that generates PRDs, user stories, experiment designs, architecture reviews, and roadmaps.",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p .",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}
