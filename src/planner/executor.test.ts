@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
-import { ToolRegistry } from "../tools/registry.js";
+import { ToolRegistry } from "mcp-toolkit";
 import { Executor, MaxStepsExceededError, StepExecutionError } from "./executor.js";
 import type { Step } from "./types.js";
 

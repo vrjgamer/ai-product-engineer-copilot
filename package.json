@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "agent-eval-framework": "github:vrjgamer/agent-eval-framework",
+    "mcp-toolkit": "github:vrjgamer/mcp-toolkit",
     "zod": "^4.4.3"
   }
 }

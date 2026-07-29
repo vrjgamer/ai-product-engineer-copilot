@@ -1,4 +1,4 @@
-import type { ToolRegistry } from "../tools/registry.js";
+import type { ToolRegistry } from "mcp-toolkit";
 import type { Step } from "./types.js";
 
 export class MaxStepsExceededError extends Error {

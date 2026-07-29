@@ -18,6 +18,13 @@ or redistributed.**
 
 TypeScript/Node, Anthropic API (Claude), Vitest, [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), Zod.
 
+Two seams have been extracted into standalone, MIT-licensed packages (Phase 6):
+[`mcp-toolkit`](https://github.com/vrjgamer/mcp-toolkit) (typed tool registry,
+MCP client wrapper, observability tracing) and
+[`agent-eval-framework`](https://github.com/vrjgamer/agent-eval-framework)
+(golden-set eval harness, LLM-as-judge with bias checks, failure taxonomy).
+This repo depends on both as git dependencies.
+
 ## Setup
 
 ```bash
@@ -40,12 +47,12 @@ servers, injected judge/planner models), per the reproducibility goals in
 | Phase | What it covers | Status |
 |---|---|---|
 | 0 — Architecture doc | Agent loop design, memory model, MCP boundary, eval strategy, observability schema, rejected alternatives | ✅ [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
-| 1 — Typed tool-calling core | Tool registry with schema validation; malformed output rejected, not coerced; unknown tools fail loudly | ✅ [`src/tools/`](./src/tools) |
+| 1 — Typed tool-calling core | Tool registry with schema validation; malformed output rejected, not coerced; unknown tools fail loudly | ✅ [`mcp-toolkit`](https://github.com/vrjgamer/mcp-toolkit) |
 | 2 — Multi-step planning loop | Planner emits an ordered step list; executor replans around failures without running stale steps; max-step guard | ✅ [`src/planner/`](./src/planner) |
 | 3 — MCP integrations (≥2 servers) | docs-store and analytics MCP servers; retrieved context used in output; cited (not invented) metrics; graceful degradation when unreachable | ✅ [`src/mcp/`](./src/mcp) |
 | 4 — Persistent memory | Facts survive across sessions; scoped per user/project with no cross-leak; explicit invalidation | ✅ [`src/memory/`](./src/memory) |
-| 5 — Rigor layer | Golden-set eval harness + regression runner, LLM-as-judge with sanity anchors and position/verbosity bias checks, 4-tag failure taxonomy, per-step observability traces | ✅ [`src/eval/`](./src/eval), [`src/observability/`](./src/observability) |
-| 6 — Extraction for open source | Eval harness/judge/taxonomy → standalone Agent Evaluation Framework; MCP registry/routing/observability → MCP Toolkit | 🔜 Planned (Q4) |
+| 5 — Rigor layer | Golden-set eval harness + regression runner, LLM-as-judge with sanity anchors and position/verbosity bias checks, 4-tag failure taxonomy, per-step observability traces | ✅ [`agent-eval-framework`](https://github.com/vrjgamer/agent-eval-framework) (taxonomy), [`mcp-toolkit`](https://github.com/vrjgamer/mcp-toolkit) (observability) |
+| 6 — Extraction for open source | Eval harness/judge/taxonomy → standalone Agent Evaluation Framework; MCP registry/routing/observability → MCP Toolkit | ✅ Done — see both repos above |
 
 Every phase above was built test-first: the failing tests were written
 before the implementation, per the repo's own TDD discipline.

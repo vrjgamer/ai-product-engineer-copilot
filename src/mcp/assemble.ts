@@ -1,4 +1,4 @@
-import type { McpCallResult } from "./client.js";
+import type { McpCallResult } from "mcp-toolkit";
 import type { MetricRecord } from "./analytics-server.js";
 
 interface ToolContentResult {

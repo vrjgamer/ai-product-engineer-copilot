@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createDocsStoreServer } from "./docs-store-server.js";
 import { createAnalyticsServer } from "./analytics-server.js";
-import { McpToolClient, type McpLogger } from "./client.js";
+import { McpToolClient, type McpLogger } from "mcp-toolkit";
 import { assembleDocsContext, citeMetric } from "./assemble.js";
 
 function makeLogger(): McpLogger & { calls: Array<[string, string, unknown]> } {
