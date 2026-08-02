@@ -1,10 +1,8 @@
 # Vision — What This Project Is and Why It's Built This Way
 
-This document is written for a recruiter, hiring manager, or technical
-reviewer deciding how much weight to give this project as evidence of
-AI-product-engineering skill. `ARCHITECTURE.md` is the technical design
-record; this document is the "why does this project exist and what should
-you take away from it" record.
+`ARCHITECTURE.md` is the technical design record — the what and how. This
+document is the why: what this project is for, what it's meant to
+demonstrate, and what it deliberately isn't.
 
 ## What this is
 
