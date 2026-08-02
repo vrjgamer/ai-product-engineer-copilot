@@ -1,302 +1,306 @@
 # Architecture: AI Product Engineer Copilot
 
-A multi-step agent that generates PRDs, user stories, experiment designs, architecture
-reviews, and roadmaps for PMs/founders. This document is written before any code exists
-(Phase 0) and is the source of truth for every design decision in this repo. It is also
-draft material for article #2, "How MCPs Change AI Product Design."
+A multi-agent graph that generates PRDs, user stories, experiment designs, architecture
+reviews, and roadmaps for PMs/founders. This document is written before the rebuild's
+code exists and is the source of truth for every design decision in this repo.
 
-Stack: TypeScript/Node, Anthropic API (Claude), Vitest. No frameworks beyond what's
-needed to keep the interesting parts (planning, memory, evals, observability) visible.
+**This is a rebuild, not an iteration.** The previous version of this project (hand-rolled
+planner/executor loop, fixture-only tests, a scripted/fake "live demo") is being replaced
+entirely. The product concept — a PM copilot producing five concrete deliverable types —
+was sound and is kept. The engineering was weak: no live model calls anywhere in the
+system, no live MCP tool use outside tests, no deployed working backend, no CI, and a
+demo that fakes the thing it's supposed to demonstrate. This rebuild's whole premise is
+that every one of those is now real.
+
+Stack: TypeScript, Next.js (single app — UI and backend in one project), LangGraph.js
+(`@langchain/langgraph`) for orchestration, the Vercel AI SDK (`ai` + `@ai-sdk/*`) for
+model calls, the MCP TypeScript SDK for tool servers, Neon Postgres (`pgvector`) for all
+persistence, deployed on Vercel's free (Hobby) tier with Fluid Compute.
 
 ---
 
-## 1. Agent loop design: planning-then-execute vs ReAct
+## 1. Agent loop design: supervisor + sub-agent graph, not a linear planner/executor
 
-**Decision: explicit plan-then-execute, not ReAct.**
+**Decision: a LangGraph `StateGraph` with a supervisor pattern — one PRD-writing node
+first, then three independent sub-agents fanned out in parallel, then a roadmap node
+that joins their outputs, then an assembler.**
 
-ReAct (interleaved reason → act → observe, one tool call at a time, next step decided
-only after seeing the last result) is the default pattern for open-ended agents. I
-rejected it here for four reasons specific to this system:
+The old design was an explicit plan-then-execute loop: a `Planner` emitted an ordered,
+typed step list; an `Executor` ran it as a linear queue, replanning around failures. That
+was a reasonable design for the tool surface it had (two MCP servers, single document
+output), but it does not showcase "agent + sub-agent + graph," which is this rebuild's
+explicit goal — a linear queue with dependency assertions is not a graph, it's a list.
 
-1. **The outputs are documents with internal structure.** A PRD has sections that
-   depend on each other in a known order (problem statement → goals → requirements →
-   success metrics). ReAct's step-at-a-time reasoning has no natural place to hold "the
-   shape of the whole document" — it re-derives structure implicitly every turn. An
-   explicit plan (an ordered step list, each step typed as `{ tool, purpose, dependsOn }`)
-   makes that structure a first-class artifact instead of something latent in the
-   model's context.
-
-2. **Observability requires a plan to observe against.** Phase 5 needs per-step traces
-   and a failure taxonomy that includes "planning" as a category. That only means
-   something if planning is a discrete, inspectable step that can itself be wrong —
-   distinct from a tool call being wrong. In ReAct, planning and execution are the same
-   event, so you can't tag a trace as a planning failure vs a tool failure.
-
-3. **Replanning needs a stable baseline to replan from.** Phase 2 requires "a failed
-   step halts or replans; it does not proceed on stale state." That's well-defined
-   against an explicit plan (you can diff the new plan against the old one, invalidate
-   only the downstream steps that depended on the failed one). Against a ReAct trace,
-   "the plan" is just the transcript, and replanning means re-reading the whole history
-   and hoping the model doesn't repeat the mistake.
-
-4. **Cost and latency are boring and predictable.** Plan-then-execute lets me emit a
-   step count up front and enforce a max-step guard before any tool runs, rather than
-   discovering runaway loops mid-flight.
-
-**What I gave up:** ReAct is better when the right next action genuinely depends on
-information you don't have yet (open-ended research, unknown search spaces). PRD/roadmap
-generation is not that — the tool surface (docs-store, analytics) is small and the
-document shape is knowable in advance. If a future step type needs genuine
-observe-then-decide behavior (e.g., "keep querying analytics until you have enough
-signal"), it will be modeled as a single plan step that internally loops (bounded), not
-as a switch to ReAct for the whole agent.
-
-**Loop shape:**
+**The graph shape, and why it isn't a flat fan-out:**
 
 ```
-Planner(request) -> Step[]              // ordered, typed, acyclic
-for step in Step[]:
-    Executor(step, context) -> Result | Failure
-    if Failure:
-        Planner.replan(remainingSteps, failure) -> Step[]  // bounded retries
-    context += Result
-Assembler(context) -> final document
+Supervisor -> PRDAgent -> [UserStoryAgent, ArchitectureReviewAgent, ExperimentDesignAgent] -> RoadmapAgent -> Assembler
+                              (parallel; join before Roadmap)
 ```
 
-A "step" is a typed union: `{ kind: "tool_call", tool, args }` or
-`{ kind: "generate", section, dependsOn }`. The planner never executes anything itself;
-the executor never decides what comes next. This separation is what Phase 1's typed
-tool-calling core and Phase 2's planner/executor split are testing.
+- **PRD Agent runs first, alone.** Every other deliverable needs to know what's actually
+  being built. Writing user stories, reviewing an architecture, or designing an
+  experiment against an undefined product is not a sensible parallel branch — it's a
+  downstream consumer of one shared artifact. This was the single most important
+  correction made during design: an earlier draft of this plan treated all five
+  sub-agents as independent parallel branches, which breaks the moment you ask "how does
+  the architecture reviewer know what to review?"
+- **User Story / Architecture Review / Experiment Design fan out in parallel** once the
+  PRD exists in shared graph state. They are genuinely independent of each other — none
+  needs another's output, only the PRD's.
+- **Roadmap Agent runs last**, after the fan-out joins. It is the one deliverable that
+  needs everything else (scope from the PRD, work breakdown from stories, feasibility/
+  risk from the architecture review, a validation plan from the experiment design) to
+  produce a sequenced timeline.
+- **Assembler** merges all five outputs into the final response, playing the same role
+  the old `assemble.ts` helpers played for MCP context — merging retrieved/generated
+  content into one artifact, just now as a graph node instead of a post-hoc helper.
+
+**How sub-agents "know" about each other's decisions**: they don't communicate directly.
+LangGraph's `StateGraph` gives every node read/write access to one shared state object
+that flows through the graph. A node "knowing" what a prior node decided means reading it
+from state, not receiving a message — this is the mechanism that makes the PRD → fan-out
+dependency correct without any inter-agent messaging protocol.
+
+**Rejected alternative: flat 5-way fan-out with no dependency ordering.** Rejected
+because it produces incoherent output (an architecture review that doesn't know what
+architecture is being proposed) and because it's a weaker showcase — a graph whose only
+feature is "everything runs in parallel" doesn't demonstrate what a graph buys you over a
+list. The PRD → fan-out → Roadmap shape has a real join point, which is also what a
+recruiter skimming the code should notice as evidence of actual design, not a template.
 
 ---
 
-## 2. Memory model
+## 2. Model provider layer: Vercel AI SDK, not LangChain's model wrappers
 
-**Decision: two-tier memory — session context (ephemeral, in-process) and persistent
-memory (durable, scoped, file/DB-backed) — with explicit promotion between tiers.**
+**Decision: every LLM call inside the graph goes through the Vercel AI SDK's
+`generateText`/`streamText` (via `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/google`),
+not `@langchain/anthropic` or another LangChain chat-model class.**
 
-- **Session context** is everything gathered during one run: the plan, tool results,
-  intermediate generations. It lives only for the duration of the run and is passed
-  explicitly through the loop above. Nothing here survives a process restart.
+LangGraph nodes are plain async functions — nothing in LangGraph requires calling a
+LangChain `BaseChatModel`. Routing every model call through the Vercel AI SDK instead
+gives one consistent provider abstraction across both the graph (backend) and the chat
+UI (frontend, via `useChat`/data-stream responses), rather than LangChain models on the
+backend and a separate streaming story on the frontend. Provider selection resolves from
+an env var (`MODEL_PROVIDER`, `MODEL_ID`) at a single call site; swapping Anthropic for
+OpenAI or Gemini is a config change, not a code change, in every sub-agent node.
 
-- **Persistent memory** is facts that should survive across sessions: prior decisions
-  about a product, previously generated artifacts, user/project preferences. It is
-  keyed by `(userId, projectId)` and nothing else — Phase 4's "no cross-leak" test
-  exists because it would be easy to accidentally key memory globally or by
-  conversation ID instead, which leaks one user's product facts into another's context.
+**Default model: Claude Haiku 4.5** (`claude-haiku-4-5`). Chosen deliberately over a
+stronger model because this is a public demo, not a production system optimizing for
+output quality — Haiku 4.5 is the cheapest current Claude model ($1/$5 per MTok) and is
+sufficient for the kind of structured generation these sub-agents do. Estimated cost is
+roughly $0.01-0.04 per full demo run (5 sub-agents × 1-3 calls each), cheaper still with
+prompt caching on the shared system prompt.
 
-- **Promotion, not automatic capture.** Not every session fact becomes a memory. A fact
-  is written to persistent memory only when the agent (or user) explicitly flags it as
-  durable ("remember that our target market is X"), mirroring the reference project's
-  own memory-writing discipline. This avoids the harder problem of automatic salience
-  detection and keeps memory content auditable — every stored fact traces back to a
-  specific write, not an inferred one.
-
-- **Invalidation is explicit and timestamped**, not TTL-based. A memory record carries
-  `writtenAt` and an optional `invalidatedAt` + `invalidatedReason`. Retrieval filters
-  out invalidated records by default but keeps them queryable for audit. TTL expiry was
-  rejected because product facts (e.g., "our target market is X") don't decay on a
-  schedule — they become wrong when a specific later decision contradicts them, which
-  is an event, not a duration.
-
-**Storage:** a local file-backed store (JSON per project, or SQLite if concurrent
-access becomes necessary) behind a `MemoryStore` interface. The interface, not the
-backing store, is the contract Phase 4's tests run against — this is one of the seams
-Phase 6 needs to extract cleanly.
+**Rejected alternative: hardcoding the Anthropic SDK directly in each node.** Rejected
+because it would make "provider-agnostic" a documentation claim rather than something
+demonstrably true — the point of routing through the Vercel AI SDK is that a demo visitor
+(or a future maintainer) can point the same graph at a different provider by changing one
+env var, not by touching graph logic.
 
 ---
 
-## 3. MCP boundary
+## 3. MCP boundary: two servers, both real data, one external dependency
 
-**Decision: MCP servers are the only way the agent touches external systems. The agent
-core has zero direct SDK/API imports for docs or analytics.**
+**Decision: two MCP servers, both backed by real (not fixture) data — a decision made
+explicitly during design, correcting an earlier draft that defaulted to fixtures for
+safety.**
 
-Two MCP servers, matching Phase 3:
+- **`docs-store` MCP**: real embedding-based search (`pgvector`) over an indexed corpus
+  of real markdown docs (pulled from a real repository). Returns cited passages, same
+  anti-hallucination discipline as the old project (`[source:<id>]` tags, never
+  fabricated).
+- **`analytics` MCP**: real GitHub repository statistics (stars, issues, commit velocity,
+  PR merge rate) via the GitHub API, cached in Neon Postgres with a TTL so the demo isn't
+  hammering GitHub's API on every run.
 
-- **docs-store MCP**: retrieval over product docs/specs. Returns passages with source
-  identifiers so generated output can cite them.
-- **analytics MCP**: returns metrics (usage, funnel, experiment results). The agent must
-  cite numbers that came from this server and is structurally prevented from inventing
-  numbers that look like they did — see the hallucination test in Phase 5.
+**Why not fixtures, and why not fully arbitrary external services either.** Fixture data
+proves the MCP *pattern* but not that MCP is doing anything real — a weak showcase for a
+project whose explicit goal is to demonstrate genuine tool use. The alternative extreme —
+wiring to arbitrary third-party SaaS APIs (a real analytics platform, a real docs
+platform) — is a stronger showcase in principle but a real reliability risk for a public
+demo link: an outage in a service you don't control makes "fully functional product" look
+broken to a recruiter clicking it at the wrong moment. The resolution is real data you
+still control: both servers ultimately depend on one external service (GitHub's API,
+high-uptime, and something the Architecture Review sub-agent's other real integration
+already commits to handling gracefully), rather than three independent third-party
+dependencies each with their own failure schedule.
 
-**Why MCP instead of direct SDK calls:** the point of this project is to demonstrate
-tool orchestration and graceful degradation, not to build the fastest possible PRD
-generator. MCP forces a clean seam: the agent's tool registry (Phase 1) sees `docs-store`
-and `analytics` as generic typed tools with schemas, no different from any other tool.
-Swapping the analytics MCP server for a different backend should require zero changes
-to the planner, executor, or eval harness — only a new server behind the same tool
-name/schema. That seam is also what makes the Phase 6 extraction ("MCP registry/routing/
-observability into MCP Toolkit") a real extraction instead of a rewrite: the registry
-code never assumed anything about *these two* servers specifically.
-
-**Failure handling:** an MCP call can fail (server unreachable, timeout, malformed
-response). Per Phase 3's third test, this must degrade gracefully: the executor catches
-the failure, logs it with a `tool` failure tag (Phase 5 taxonomy), and either (a) lets
-the planner replan around the missing data, or (b) surfaces an explicit "data
-unavailable" note in the final document rather than fabricating a substitute. It must
-never crash the run and must never silently substitute a plausible-looking value.
-
-**Rejected alternative:** treating MCP as an optional enhancement layered on top of
-direct API calls ("use MCP if available, fall back to direct SDK"). Rejected because it
-would mean two code paths doing the same thing, only one of which is ever exercised in
-demos — the opposite of "keep the interesting parts visible."
+**Failure handling** follows the old project's discipline: an MCP call failure degrades
+gracefully (the graph continues with an explicit "data unavailable" note) rather than
+crashing the run or fabricating a plausible-looking substitute.
 
 ---
 
-## 4. Eval strategy
+## 4. Persistence: one Neon Postgres database, not several specialized services
 
-**Decision: offline golden-set regression eval + LLM-as-judge, not human labeling, as
-the primary correctness signal — with explicit bias checks on the judge itself.**
+**Decision: a single Neon Postgres database, with the `pgvector` extension, serving every
+persistence need in this system.**
 
-**Why LLM-as-judge over human labels:**
-- Throughput: the golden set needs to run on every change (regression gate), which
-  human labeling can't sustain at CI speed.
-- Consistency: a rubric-driven judge applies the same criteria every run; a human
-  grader's standards drift over a session and between graders.
-- The real risk isn't "should I use a judge" — it's an ungrounded judge. So the design
-  puts effort into anchoring and bias-checking the judge rather than avoiding it:
-  - **Sanity anchors**: fixed known-good and known-bad outputs the judge must score
-    correctly before its verdicts on real cases are trusted. If the judge can't
-    separate an obviously-good PRD from an obviously-bad one, its opinion on a
-    borderline case is worthless — this is a precondition check, not just another test.
-  - **Structured, parseable judge output**: `{ score, rationale, citedEvidence }` as a
-    typed schema (reusing the Phase 1 tool-calling core — the judge's own output is
-    itself a typed tool result). Free-text verdicts can't be regression-checked
-    programmatically.
-  - **Position/verbosity bias check**: swapping the order of A/B outputs, and padding
-    one response with harmless extra length, shouldn't flip which one wins beyond a
-    defined threshold. This is a known, well-documented failure mode of LLM judges
-    (order bias, length bias) and is tested directly rather than assumed away.
+| Need | How it's served |
+|---|---|
+| LangGraph checkpointing (graph state/thread history) | `@langchain/langgraph-checkpoint-postgres` |
+| `docs-store` vector search | `pgvector` embeddings table |
+| Persistent memory (per-user/project facts) | Plain relational tables — replaces the old file-backed `MemoryStore` |
+| GitHub-stats cache (TTL'd) | Table keyed by repo + fetched-at |
+| Rate-limit counters (§6) | Table keyed by `ip_hash` + time window |
+| Lightweight run traces (§7) | One row per graph run |
 
-**Golden set representativeness:** cases are derived from the actual tool surface (docs-
-store hit, docs-store miss, analytics available, analytics unreachable, ambiguous
-request needing clarification) rather than hand-picked "nice" examples, so the set
-exercises the failure taxonomy (§5) by construction, not by luck. The known gap: the
-golden set is authored by one person (me) and will under-represent product domains and
-user phrasing I haven't thought of — this is the honest limit of the current set and the
-first thing to grow if the eval starts passing more than the real system deserves.
-
-**Reproducibility:** fixed temperature (0 where the task allows deterministic
-comparison) and fixed model version pinned per eval run, with the run's config recorded
-alongside its results. Determinism isn't guaranteed by fixed temperature alone at the
-API level, so reproducibility here means "same inputs, same rubric, comparable score
-distribution," not bit-identical output — that distinction is recorded so it isn't
-oversold later.
-
-**Rejected alternative:** pure human review as the release gate. Rejected not because
-human judgment is worse, but because it doesn't scale to "runs on every change," which
-is the actual requirement (a regression gate). Human review still has a place — spot-
-checking the judge's own calibration — but it isn't the gate.
+One database for all of this is a deliberate scope decision, not a shortcut: this is a
+low-traffic public demo, and a dedicated vector DB or a separate Redis/session store
+would be real infrastructure to provision and operate for a workload that doesn't need
+it. Neon's free tier comfortably covers every table above. If this ever needed to scale
+past a demo, splitting checkpointing/vectors/cache onto specialized services would be the
+obvious next step — deliberately not taken here.
 
 ---
 
-## 5. Failure taxonomy
+## 5. Request architecture: one synchronous streaming route, no background jobs
 
-**Decision: four tags — `hallucination`, `planning`, `tool`, `context` — applied per run,
-zero or more per run, derived from structured signals rather than free-text judge
-guesses.**
+**Decision: a single Next.js app (no separate core package), with one synchronous
+streaming Route Handler that runs the graph in-process per request.**
 
-- **hallucination**: output contains a claim (especially a number) not traceable to a
-  tool result or provided input. Detected primarily by cross-referencing cited figures
-  against the analytics MCP response for that run — this is why analytics results must
-  carry stable identifiers the checker can match against.
-- **planning**: the plan itself was wrong (wrong step order, missing a necessary step,
-  a step that couldn't succeed given its dependencies) — distinct from a step executing
-  correctly but the plan being unnecessary or misordered. This tag exists *because* the
-  loop is plan-then-execute (§1); it wouldn't be assignable in a ReAct trace.
-- **tool**: a tool/MCP call failed or returned an error, independent of whether the
-  agent recovered gracefully.
-- **context**: the agent had the right information available but failed to use it
-  (ignored retrieved docs, contradicted its own earlier step).
+The old repo split a standalone agent library (`src/`) from a marketing site (`web/`)
+because the agent wasn't reachable from the site at all. That split has no reason to
+exist now: the graph *is* the backend of a real running product. It lives in
+`app/api/generate/route.ts`, invoked directly by the page that renders its output,
+sharing the same Neon connection and Vercel AI SDK provider config as the UI.
 
-**Why four and not more:** each tag maps to a different fix (better retrieval, better
-planner prompting, better error handling, better context assembly) and each maps to a
-different part of the system under test. A finer-grained taxonomy was rejected for now
-because Phase 5 needs the taxonomy to be checkable by an eval case (the hallucination
-test fabricates a wrong analytics number and asserts it gets caught), and a tag that
-can't be exercised by a concrete test case isn't earning its keep yet. The taxonomy is
-expected to grow post-launch, driven by tags real runs actually need, not speculative
-categories.
+A visitor's request is handled entirely synchronously: the Route Handler runs the
+LangGraph graph in-process (Node.js runtime, not Edge — the Postgres driver and MCP
+servers need real Node APIs) and streams graph events (supervisor routing, per-node
+status, MCP tool calls) to the browser as they happen, via LangGraph's event stream piped
+through the Vercel AI SDK's data-stream protocol. There is no queue, no worker, no
+polling endpoint, and no run-ID-to-poll-later indirection.
 
-**Known gap:** this taxonomy doesn't yet distinguish "MCP unreachable" (infra) from
-"MCP reachable but returned wrong/incomplete data" (semantic) — both currently tag
-`tool`. That split is deferred until there's a real case that needs it, per the
-project's own no-speculative-abstraction stance.
+**Deployment constraint this depends on:** Vercel's Hobby (free) tier defaults to a
+60-second function duration, but with **Fluid Compute** (Vercel's current default
+execution model, available on Hobby) that extends to **300 seconds**. This is workable
+specifically *because* the graph in §1 is PRD → fan-out(3) → Roadmap rather than five
+sequential sub-agents — the fully-sequential worst case (up to 15 LLM calls end-to-end)
+would risk the ceiling; the parallelized shape gives real headroom. `maxDuration: 300` is
+set explicitly on the route handler as a load-bearing part of this design, not an
+incidental config value.
 
----
-
-## 6. Observability schema
-
-**Decision: per-step trace records, append-only, keyed by run ID, with cost computed
-from token counts rather than estimated.**
-
-```
-Run {
-  runId
-  startedAt, endedAt
-  request
-  finalOutput
-  totalCostUsd            // sum of step costs
-}
-
-StepTrace {
-  runId
-  stepId
-  stepKind: "plan" | "tool_call" | "generate" | "judge"
-  startedAt, latencyMs
-  inputTokens, outputTokens, costUsd
-  failureTags: FailureTag[]     // §5, zero or more
-  raw: { input, output }        // for debugging, not for the eval gate
-}
-```
-
-- **Latency and cost per step, not just per run.** A run-level total tells you the
-  system is slow; a step-level trace tells you *which* step (planning vs a specific
-  tool call vs generation) is slow or expensive, which is the actual actionable signal.
-- **Cost is computed, not estimated.** Every step trace stores actual input/output
-  token counts from the API response; run cost is a sum, not a separate estimate that
-  can drift from reality.
-- **Traces are queryable by failure tag** (§5) so "show me every context-failure trace
-  from the last 100 runs" is a query, not a manual transcript search — this is the
-  concrete requirement Phase 5's observability tests check.
-- **Storage:** same file/SQLite-backed store as memory (§2), different table/namespace.
-  Reusing the storage layer rather than standing up a separate observability backend
-  keeps the "boring stack" promise and keeps the seam Phase 6 needs (MCP Toolkit takes
-  the registry + observability, not a bespoke DB).
-
-**Rejected alternative:** wiring a third-party observability/tracing SaaS immediately.
-Rejected for now because the interesting part of this project is *designing* the trace
-schema and taxonomy myself (this is Gap #2 work), not integrating a vendor. A vendor
-export can be added later behind the same `StepTrace` shape without changing the schema.
+**Rejected alternative: background job + polling/subscription.** Rejected as
+disproportionate infrastructure — a queue, a worker process, and run-state tracking are
+worth it for a high-traffic or long-running production agent, but roughly double the
+moving parts for a low-traffic demo that synchronous streaming already handles, given the
+duration budget above.
 
 ---
 
-## 7. Summary of rejected alternatives
+## 6. Rate limiting: protecting free-tier resources, communicated honestly
+
+**Decision: a simple IP-based rate limiter (e.g. 5 runs/hour/IP) backed by a table in the
+same Neon database, with the limit surfaced proactively and gracefully — not silently
+enforced.**
+
+Every layer of this stack is on a free tier (Vercel Hobby, Neon free tier, GitHub API
+rate limits). Per-run token cost is negligible, but *volume* is the real exposure: a
+traffic spike (a recruiter's team sharing the link, a bot, a stress-test) could exhaust
+Vercel's Hobby invocation/bandwidth caps or Neon's connection limits and take the whole
+demo down, not just cost more. The limiter itself is a small table (`ip_hash`,
+`window_start`, `count`) checked at the top of the Route Handler.
+
+This is explicitly a UX requirement, not just a backend guard: the demo page states the
+limit and the model in use up front (context for a technical visitor skimming the site),
+and hitting the limit produces a clear, friendly message ("Demo rate limit reached — try
+again in N minutes"), not a bare HTTP 429.
+
+---
+
+## 7. Observability: a lightweight run trace, not the old full eval/rigor layer
+
+**Decision: persist one trace row per graph run — nodes executed, per-node latency, token
+usage, MCP calls made — exposed via a "view trace" link on the output. The old project's
+full eval/rigor layer (golden-set regression harness, LLM-as-judge with bias checks, a
+four-tag failure taxonomy) is explicitly deferred, not rebuilt for v1.**
+
+The old rigor layer was one of the previous project's strongest ideas, but it needs
+infrastructure disproportionate to a demo: a golden dataset, a judge-model pipeline, and
+a regression-gate process meant to run on every code change. None of that is earned yet
+by a system that doesn't have production traffic or a change-management process to gate.
+A lightweight run trace gets most of the practical value (you can see what a run
+actually did, how long each node took, what it cost) at a fraction of the build cost, and
+is genuinely useful for debugging this project during its own build.
+
+The full eval/rigor concept is not dropped — it's named explicitly in §9 as deferred
+work, with the reasoning for deferring it stated, rather than silently disappearing the
+way it would if this document just didn't mention it.
+
+---
+
+## 8. Testing strategy
+
+**Decision: the default test suite is fully mocked (Vercel AI SDK model calls and MCP
+responses replaced with fixtures) and requires no API keys — a separate, manually-invoked
+suite exercises the real Haiku 4.5 and real GitHub MCP integration.**
+
+This preserves the old project's actual discipline (`npm test` needs no secrets, runs
+fast, runs everywhere) for the bulk of the suite — graph routing/state logic, the PRD →
+fan-out → Roadmap dependency edges, error/replan handling — none of which needs a live
+model to verify. A second, small real-API suite (e.g. `npm run test:e2e`) is not part of
+`npm test` and is not run automatically in CI: given the graph now makes genuinely real
+calls, a suite that proves the real wiring works is still worth having, but managing
+secrets and spend in CI for a demo project isn't a good trade against running it manually
+before a deploy.
+
+---
+
+## 9. Future work (explicitly deferred, not silently dropped)
+
+Two capabilities were designed against, then deliberately scoped out of v1:
+
+- **Clarifying-question / human-in-the-loop support.** LangGraph has a native
+  `interrupt`/resume mechanism — a node can pause mid-graph, surface a question to the
+  user, and resume from that exact point later, which pairs naturally with the Postgres
+  checkpointer already in this design (a paused run's state is durably saved, keyed by
+  thread ID, and resumable from a later HTTP request). This was scoped out of v1 because
+  it changes the product's shape from single-shot (free-text in, stream out) to
+  multi-turn (a chat-like UI, a "resume this thread" API alongside "start a run"),  which
+  is real added surface area on top of everything else in this document. v1's sub-agents
+  instead make explicit assumptions when input is ambiguous and state them in the output,
+  rather than pausing to ask. This is the natural v2 feature, and the reason it's called
+  out here is that the infrastructure to support it (checkpointed, resumable graph state)
+  is already being built for other reasons — implementing interrupt/resume later is an
+  incremental addition, not a redesign.
+- **Full eval/rigor layer** (§7) — golden-set regression testing, LLM-as-judge with bias
+  checks, the four-tag failure taxonomy. Deferred in favor of the lightweight run trace;
+  the natural upgrade path once this project has enough real usage/change volume to
+  justify a regression gate.
+
+---
+
+## 10. Summary of rejected alternatives
 
 | Decision point | Rejected | Why |
 |---|---|---|
-| Agent loop | ReAct | No stable plan to observe/replan against; can't separate planning failures from execution failures |
-| Memory capture | Automatic salience-based capture | Unauditable; every stored fact should trace to an explicit write |
-| Memory expiry | TTL-based | Facts go stale on events (contradiction), not on a clock |
-| MCP usage | "MCP if available, else direct SDK" fallback | Two code paths, only one ever exercised; defeats the point of the project |
-| Eval gate | Human-only review | Doesn't scale to a per-change regression gate |
-| Failure taxonomy | Fine-grained tags from day one | Tags not backed by a concrete eval case aren't earning their keep |
-| Observability backend | Third-party tracing SaaS from the start | The schema/taxonomy design is the point of this phase, not vendor integration |
+| Agent orchestration | Flat 5-way parallel fan-out | Incoherent output — sub-agents need the PRD to exist before their work is meaningful |
+| Model calls | LangChain chat-model wrappers (`@langchain/anthropic`) | Two provider abstractions (backend + frontend) instead of one; Vercel AI SDK covers both |
+| MCP data source | Fixture-only (as in the old project) | Proves the MCP pattern, not that MCP does anything real |
+| MCP data source | Fully arbitrary third-party SaaS APIs | Stronger showcase in principle, but real outage risk for a public demo link |
+| Persistence | Separate vector DB + separate session/KV store | Real infrastructure to operate for a workload that doesn't need it |
+| Request handling | Background job + polling/subscription | Doubles the moving parts for a low-traffic demo that synchronous streaming already handles |
+| Hosting | Vercel Pro | Free tier is workable given the parallelized graph shape and Fluid Compute's 300s ceiling |
+| Observability | Full golden-set/LLM-as-judge eval layer for v1 | Disproportionate infrastructure without production traffic/change volume to gate |
+| Conversation shape | Clarifying-question support (interrupt/resume) in v1 | Changes single-shot into multi-turn — real scope, deliberately deferred to v2 |
 
 ---
 
-## 8. Extraction seams (for Phase 6)
+## 11. Implementation sequence
 
-Two seams are being kept clean on purpose, from Phase 3/5 onward:
+This document describes the target architecture. The actual build is sequenced as a
+series of Technical Design Documents under [`docs/tdd/`](./docs/tdd), each scoped to be
+implementable standalone, test-first, by a future session without re-deriving the
+decisions above:
 
-- **Agent Evaluation Framework**: eval harness + judge + taxonomy (§4, §5) must not
-  import anything from the planner/executor beyond a `Run`/`StepTrace` shape it can
-  consume generically. It should be runnable against *any* agent that emits traces in
-  this shape, not just this one.
-- **MCP Toolkit**: the tool registry, MCP client routing, and observability store (§3,
-  §6) must not know that the two servers are specifically "docs-store" and "analytics."
-  They are registered by name/schema like any other tool.
-
-Both seams are tested implicitly by Phase 1–5's own test suites: if a test needs to
-reach into planner internals to verify eval or observability behavior, the seam has
-already been violated.
+1. [`0001-app-scaffold-and-model-provider.md`](./docs/tdd/0001-app-scaffold-and-model-provider.md)
+2. [`0002-langgraph-core.md`](./docs/tdd/0002-langgraph-core.md)
+3. [`0003-neon-postgres-and-checkpointing.md`](./docs/tdd/0003-neon-postgres-and-checkpointing.md)
+4. [`0004-mcp-servers.md`](./docs/tdd/0004-mcp-servers.md)
+5. [`0005-streaming-route-and-ui.md`](./docs/tdd/0005-streaming-route-and-ui.md)
+6. [`0006-rate-limiting.md`](./docs/tdd/0006-rate-limiting.md)
+7. [`0007-run-tracing.md`](./docs/tdd/0007-run-tracing.md)
+8. [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md)
+9. [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md)
