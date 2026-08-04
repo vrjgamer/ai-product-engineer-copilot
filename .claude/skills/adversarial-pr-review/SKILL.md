@@ -37,6 +37,9 @@ Use the GitHub tools to pull full PR context, not just the diff:
 - Existing review comments/reviews already on the PR, so you don't re-report
   what's already been flagged — check whether it was addressed or dismissed
   and why.
+- Any issue/ticket the PR description links to — the stated intent behind a
+  change is part of judging whether it's actually justified, not just
+  whether the code is locally correct.
 
 ## Step 2 — Build context beyond the diff
 
@@ -103,6 +106,12 @@ nothing survived verification — don't manufacture findings to fill it.
 If that tool isn't available in the current environment, present the same
 structure as markdown: file/line, summary, failure scenario, verdict.
 
+Alongside the findings, briefly note anything genuinely well done (a good
+test for a tricky edge case, a clean fix for a real problem) if you noticed
+it while digging — not as padding or false balance, but because a critique
+that also shows it noticed what's solid is more credible, not less
+adversarial.
+
 ## Step 6 — Offer to post to GitHub (ask first, always)
 
 Never post to the PR without the user confirming — surfacing findings and
@@ -131,8 +140,11 @@ confirm:
 
 - This is for reviewing an actual GitHub PR. For an uncommitted local diff,
   use `/code-review` instead.
-- If the PR is large enough that reading every file in full isn't practical,
+- If the PR is large enough that reading every file in full isn't practical
+  (as a rough guide, several hundred changed lines across many files),
   prioritize the files with the highest-risk changes (auth, data handling,
   money, external input) over mechanical ones (renames, generated files,
   lockfiles) — say so explicitly rather than silently skimming everything
-  equally.
+  equally. If the size itself is the problem — unrelated changes bundled
+  together, or a diff too large to meaningfully review as one unit — say
+  that too; "this should have been split" is a legitimate finding.
