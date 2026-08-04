@@ -140,6 +140,32 @@ describe("buildGraph", () => {
     expect(finalState.roadmap).toEqual({ content: "Roadmap content" });
   });
 
+  it("records an errors entry for each of two fan-out nodes that fail in the same superstep", async () => {
+    generateText.mockImplementation(async ({ system }: { system: string }) => {
+      const node = nodeNameFor(system);
+      if (node === "userStoryAgent" || node === "experimentDesignAgent") {
+        throw new Error(`${node} unavailable`);
+      }
+      return { text: CONTENT_BY_NODE[node] };
+    });
+
+    const graph = buildGraph();
+    const finalState = await graph.invoke({ request: "Build a todo app" });
+
+    expect(finalState.userStories).toBeNull();
+    expect(finalState.experimentDesign).toBeNull();
+    expect(finalState.errors).toEqual(
+      expect.arrayContaining([
+        { node: "userStoryAgent", message: "userStoryAgent unavailable" },
+        { node: "experimentDesignAgent", message: "experimentDesignAgent unavailable" },
+      ]),
+    );
+    expect(finalState.errors).toHaveLength(2);
+    // The node with no dependency on either failure still completes.
+    expect(finalState.architectureReview).toEqual({ content: "Architecture review content" });
+    expect(finalState.roadmap).toEqual({ content: "Roadmap content" });
+  });
+
   it("produces a fully-successful run with all five output fields populated and no errors", async () => {
     const graph = buildGraph();
     const finalState = await graph.invoke({ request: "Build a todo app" });
