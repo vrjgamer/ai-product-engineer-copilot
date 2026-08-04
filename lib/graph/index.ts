@@ -1,3 +1,4 @@
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { architectureReviewAgent } from "./nodes/architectureReviewAgent";
@@ -9,12 +10,37 @@ import { supervisor } from "./nodes/supervisor";
 import { userStoryAgent } from "./nodes/userStoryAgent";
 import { GraphAnnotation } from "./state";
 
+export type GraphNodeName =
+  | "supervisor"
+  | "prdAgent"
+  | "userStoryAgent"
+  | "architectureReviewAgent"
+  | "experimentDesignAgent"
+  | "roadmapAgent"
+  | "assembler";
+
+export interface BuildGraphOptions {
+  /**
+   * Persists graph state per `thread_id` (passed via `invoke`'s config) so a
+   * run survives across requests/process restarts. See TDD 0003 — omit for
+   * the mocked test suite, pass `getCheckpointer()` (lib/db/checkpointer.ts)
+   * in real usage.
+   */
+  checkpointer?: BaseCheckpointSaver;
+  /**
+   * Pauses the run after the named nodes complete, before continuing —
+   * requires `checkpointer`. Used by scripts/checkpoint-roundtrip.ts to
+   * simulate a process restart mid-run.
+   */
+  interruptAfter?: GraphNodeName[];
+}
+
 /**
  * `supervisor -> prdAgent -> [userStoryAgent, architectureReviewAgent,
  * experimentDesignAgent] -> roadmapAgent -> assembler -> END`.
  * See ARCHITECTURE.md §1 for why PRD runs alone before the fan-out.
  */
-export function buildGraph() {
+export function buildGraph(options: BuildGraphOptions = {}) {
   return new StateGraph(GraphAnnotation)
     .addNode("supervisor", supervisor)
     .addNode("prdAgent", prdAgent)
@@ -33,7 +59,7 @@ export function buildGraph() {
     .addEdge("experimentDesignAgent", "roadmapAgent")
     .addEdge("roadmapAgent", "assembler")
     .addEdge("assembler", END)
-    .compile();
+    .compile({ checkpointer: options.checkpointer, interruptAfter: options.interruptAfter });
 }
 
 export type CompiledGraph = ReturnType<typeof buildGraph>;
