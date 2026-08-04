@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Adversarially, skeptically reviews a GitHub pull request — actively hunts for bugs, security vulnerabilities, missed edge cases, weak or missing tests, and unjustified design decisions instead of rubber-stamping the diff. Use this whenever the user asks for an adversarial, red-team, critical, or "devil's advocate" review of a PR, wants a second opinion that assumes something was missed, or invokes /review-pr with a PR number, PR URL, or branch name. Trigger this whenever the user wants to stress-test a pull request, find what a reviewer missed, or "tear apart" or "poke holes in" a PR — even without the word "adversarial." Complements (not replaces) /code-review, which reviews the local working diff, and /security-review, which is security-only — this skill applies a deliberately hostile persona across correctness, security, and design together, against an actual GitHub PR, and can optionally post the findings back to GitHub as a formal review.
+description: Adversarially, skeptically reviews a GitHub pull request — actively hunts for bugs, security vulnerabilities, missed edge cases, weak or missing tests, and unjustified design decisions instead of rubber-stamping the diff. Use this whenever the user asks for an adversarial, red-team, critical, or "devil's advocate" review of a PR, wants a second opinion that assumes something was missed, or invokes /review-pr with a PR number, PR URL, or branch name. Trigger this whenever the user wants to stress-test a pull request, find what a reviewer missed, or "tear apart" or "poke holes in" a PR — even without the word "adversarial." Complements (not replaces) /code-review, which reviews the local working diff, and /security-review, which is security-only — this skill applies a deliberately hostile persona across correctness, security, and design together, against an actual GitHub PR. Posts the review directly to the PR on GitHub as soon as it runs — invoking this skill is itself the go-ahead to publish, so only invoke it when a visible, public review on that PR is actually wanted.
 ---
 
 # Review PR
@@ -112,11 +112,14 @@ it while digging — not as padding or false balance, but because a critique
 that also shows it noticed what's solid is more credible, not less
 adversarial.
 
-## Step 6 — Offer to post to GitHub (ask first, always)
+## Step 6 — Post the review to GitHub
 
-Never post to the PR without the user confirming — surfacing findings and
-publishing them to a shared PR are different levels of consequence. If they
-confirm:
+This skill publishes: once the findings in Step 5 are ready, post them to
+the PR as a real GitHub review in the same run, without a separate
+confirmation step — invoking the skill on a specific PR is the user's
+go-ahead to make the review visible there. (If the user just wants findings
+surfaced in-session without touching the PR, that's a plain adversarial
+read-through, not this skill — say so rather than posting anyway.)
 
 1. Open a pending review (`pull_request_review_write`, method `create`).
 2. Add each finding that anchors to a changed line as an inline comment via
