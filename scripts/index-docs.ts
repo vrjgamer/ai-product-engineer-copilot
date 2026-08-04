@@ -5,7 +5,7 @@
  * 0004's implementer note: this repo itself, once rebuilt, is a reasonable
  * docs-store corpus). Run with:
  *
- *   DATABASE_URL=postgres://... OPENAI_API_KEY=sk-... npx tsx scripts/index-docs.ts
+ *   DATABASE_URL=postgres://... GOOGLE_GENERATIVE_AI_API_KEY=... npx tsx scripts/index-docs.ts
  */
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";

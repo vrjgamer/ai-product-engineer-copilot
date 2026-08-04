@@ -3,9 +3,9 @@
  * test suite. Exercises both MCP servers for real: get_repo_stats against
  * the configured demo repo (GITHUB_TOKEN recommended, works unauthenticated
  * too) and search_docs against whatever's been indexed by
- * scripts/index-docs.ts (needs DATABASE_URL + OPENAI_API_KEY). Run with:
+ * scripts/index-docs.ts (needs DATABASE_URL + GOOGLE_GENERATIVE_AI_API_KEY). Run with:
  *
- *   DATABASE_URL=postgres://... OPENAI_API_KEY=sk-... npx tsx scripts/mcp-roundtrip.ts
+ *   DATABASE_URL=postgres://... GOOGLE_GENERATIVE_AI_API_KEY=... npx tsx scripts/mcp-roundtrip.ts
  */
 import { getRepoStatsTool, searchDocsTool } from "../mcp/tools";
 
