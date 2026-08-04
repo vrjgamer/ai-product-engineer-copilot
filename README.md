@@ -40,12 +40,11 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 
 ## Current status
 
-The rebuild is at the **planning stage**: `ARCHITECTURE.md` and the
-Technical Design Documents under [`docs/tdd/`](./docs/tdd) describe the full
-target system. No rebuild code has been written yet — implementation
-proceeds one TDD at a time, test-first, in the order below. The `src/` and
-`web/` directories in this repo still reflect the *previous* implementation
-and will be removed as the corresponding TDD phases land.
+The rebuild is underway: `ARCHITECTURE.md` and the Technical Design
+Documents under [`docs/tdd/`](./docs/tdd) describe the full target system.
+Implementation proceeds one TDD at a time, test-first, in the order below.
+TDD 0001 (app scaffold, model provider) has landed — the old `src/` and
+`web/` directories from the previous implementation have been removed.
 
 ## Implementation sequence (TDDs)
 
