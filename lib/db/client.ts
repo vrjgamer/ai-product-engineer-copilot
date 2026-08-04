@@ -19,6 +19,12 @@ export function getDb(): DbClient {
       );
     }
     pool = new Pool({ connectionString });
+    // node-postgres emits 'error' on the pool for idle-client failures (e.g.
+    // Neon closing an idle connection); without a listener that's an
+    // unhandled exception that crashes the process.
+    pool.on("error", (err) => {
+      console.error("Unexpected error on idle Postgres client", err);
+    });
   }
   return pool;
 }

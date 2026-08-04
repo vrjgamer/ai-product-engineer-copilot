@@ -3,9 +3,10 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 let checkpointer: PostgresSaver | undefined;
 
 /**
- * Call `.setup()` on the returned saver once (e.g. via `scripts/migrate.ts`
- * or a manual run) before using it — it creates its own checkpoint tables,
- * separate from `migrations/*.sql`.
+ * Call `.setup()` on the returned saver once before using it — it creates
+ * its own checkpoint tables, separate from `migrations/*.sql`.
+ * `scripts/migrate.ts` calls it after applying migrations, so running that
+ * script provisions everything needed.
  */
 export function getCheckpointer(): PostgresSaver {
   if (!checkpointer) {

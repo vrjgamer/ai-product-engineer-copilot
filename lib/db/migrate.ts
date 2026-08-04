@@ -25,7 +25,10 @@ export async function runMigrations(
   );
   const applied = new Set(rows.map((row) => row.name));
 
-  const sorted = [...migrations].sort((a, b) => a.name.localeCompare(b.name));
+  // Plain lexicographic order, not locale-sensitive `localeCompare` — a
+  // migration runner needs order to be deterministic regardless of the
+  // host's locale.
+  const sorted = [...migrations].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const newlyApplied: string[] = [];
 
   for (const migration of sorted) {

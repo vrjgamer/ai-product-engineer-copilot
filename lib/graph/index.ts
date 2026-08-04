@@ -10,6 +10,15 @@ import { supervisor } from "./nodes/supervisor";
 import { userStoryAgent } from "./nodes/userStoryAgent";
 import { GraphAnnotation } from "./state";
 
+export type GraphNodeName =
+  | "supervisor"
+  | "prdAgent"
+  | "userStoryAgent"
+  | "architectureReviewAgent"
+  | "experimentDesignAgent"
+  | "roadmapAgent"
+  | "assembler";
+
 export interface BuildGraphOptions {
   /**
    * Persists graph state per `thread_id` (passed via `invoke`'s config) so a
@@ -18,6 +27,12 @@ export interface BuildGraphOptions {
    * in real usage.
    */
   checkpointer?: BaseCheckpointSaver;
+  /**
+   * Pauses the run after the named nodes complete, before continuing —
+   * requires `checkpointer`. Used by scripts/checkpoint-roundtrip.ts to
+   * simulate a process restart mid-run.
+   */
+  interruptAfter?: GraphNodeName[];
 }
 
 /**
@@ -44,7 +59,7 @@ export function buildGraph(options: BuildGraphOptions = {}) {
     .addEdge("experimentDesignAgent", "roadmapAgent")
     .addEdge("roadmapAgent", "assembler")
     .addEdge("assembler", END)
-    .compile({ checkpointer: options.checkpointer });
+    .compile({ checkpointer: options.checkpointer, interruptAfter: options.interruptAfter });
 }
 
 export type CompiledGraph = ReturnType<typeof buildGraph>;
