@@ -1,9 +1,9 @@
 ---
-name: adversarial-pr-review
-description: Adversarially, skeptically reviews a GitHub pull request — actively hunts for bugs, security vulnerabilities, missed edge cases, weak or missing tests, and unjustified design decisions instead of rubber-stamping the diff. Use this whenever the user asks for an adversarial, red-team, critical, or "devil's advocate" review of a PR, wants a second opinion that assumes something was missed, or invokes /adversarial-pr-review with a PR number, PR URL, or branch name. Trigger this whenever the user wants to stress-test a pull request, find what a reviewer missed, or "tear apart" or "poke holes in" a PR — even without the word "adversarial." Complements (not replaces) /code-review, which reviews the local working diff, and /security-review, which is security-only — this skill applies a deliberately hostile persona across correctness, security, and design together, against an actual GitHub PR, and can optionally post the findings back to GitHub as a formal review.
+name: review-pr
+description: Adversarially, skeptically reviews a GitHub pull request — actively hunts for bugs, security vulnerabilities, missed edge cases, weak or missing tests, and unjustified design decisions instead of rubber-stamping the diff. Use this whenever the user asks for an adversarial, red-team, critical, or "devil's advocate" review of a PR, wants a second opinion that assumes something was missed, or invokes /review-pr with a PR number, PR URL, or branch name. Trigger this whenever the user wants to stress-test a pull request, find what a reviewer missed, or "tear apart" or "poke holes in" a PR — even without the word "adversarial." Complements (not replaces) /code-review, which reviews the local working diff, and /security-review, which is security-only — this skill applies a deliberately hostile persona across correctness, security, and design together, against an actual GitHub PR, and can optionally post the findings back to GitHub as a formal review.
 ---
 
-# Adversarial PR Review
+# Review PR
 
 ## Why adversarial
 
