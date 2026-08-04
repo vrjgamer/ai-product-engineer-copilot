@@ -1,0 +1,16 @@
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  title: "AI Product Engineer Copilot",
+  description:
+    "A multi-agent graph that generates PRDs, user stories, experiment designs, architecture reviews, and roadmaps.",
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
