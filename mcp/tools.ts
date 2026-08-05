@@ -1,4 +1,4 @@
-import { createAnalyticsServer, DEFAULT_DEMO_REPO } from "./analytics/server";
+import { createAnalyticsServer, getDefaultDemoRepo } from "./analytics/server";
 import type { RepoStats } from "./analytics/getRepoStats";
 import { callMcpTool } from "./client";
 import { createDocsStoreServer } from "./docs-store/server";
@@ -10,7 +10,7 @@ export async function searchDocsTool(query: string): Promise<SearchDocsResult> {
 }
 
 /** The graph's only entry point into analytics — see mcp/client.ts for the real MCP round trip underneath. */
-export async function getRepoStatsTool(repo: string = DEFAULT_DEMO_REPO): Promise<RepoStats> {
+export async function getRepoStatsTool(repo: string = getDefaultDemoRepo()): Promise<RepoStats> {
   return callMcpTool<RepoStats>(createAnalyticsServer(), "get_repo_stats", { repo });
 }
 

@@ -5,7 +5,15 @@ import { getDb } from "../../lib/db/client";
 import { getRepoStats } from "./getRepoStats";
 import { fetchRepoStatsFromGithub } from "./github";
 
-export const DEFAULT_DEMO_REPO = process.env.GITHUB_DEMO_REPO ?? "vrjgamer/ai-product-engineer-copilot";
+/**
+ * Read fresh on every call, not captured as a module-level constant — matches
+ * lib/models/provider.ts's and mcp/docs-store/embeddings.ts's "read env vars
+ * per call" convention, so changing GITHUB_DEMO_REPO takes effect without a
+ * process restart (relevant on a warm Fluid Compute instance, ARCHITECTURE.md §5).
+ */
+export function getDefaultDemoRepo(): string {
+  return process.env.GITHUB_DEMO_REPO ?? "vrjgamer/ai-product-engineer-copilot";
+}
 
 /**
  * A real MCP server (ARCHITECTURE.md §3) exposing `get_repo_stats`: real

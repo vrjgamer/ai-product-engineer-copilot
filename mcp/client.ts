@@ -20,9 +20,8 @@ export async function callMcpTool<T>(
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "graph-client", version: "1.0.0" });
 
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-
   try {
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const result = await client.callTool({ name: toolName, arguments: args });
     if (result.isError) {
       const message = Array.isArray(result.content)

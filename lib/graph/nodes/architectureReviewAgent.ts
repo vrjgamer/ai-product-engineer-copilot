@@ -21,7 +21,11 @@ export async function architectureReviewAgent(state: GraphState): Promise<GraphS
     if (stats.value) promptParts.push(formatRepoStats(stats.value));
 
     const rawContent = await generateNodeText(SYSTEM_PROMPT, promptParts.join("\n\n"));
-    const content = withDegradedNote(rawContent, "docs-store search and/or analytics", toolErrors.length > 0);
+    const degradedSources = [
+      docs.error ? "docs-store search" : null,
+      stats.error ? "analytics" : null,
+    ].filter((source): source is string => source !== null);
+    const content = withDegradedNote(rawContent, degradedSources.join(" and "), degradedSources.length > 0);
 
     return toolErrors.length > 0
       ? { architectureReview: { content }, errors: toolErrors }
