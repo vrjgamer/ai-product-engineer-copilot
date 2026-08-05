@@ -43,10 +43,10 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 The rebuild is underway: `ARCHITECTURE.md` and the Technical Design
 Documents under [`docs/tdd/`](./docs/tdd) describe the full target system.
 Implementation proceeds one TDD at a time, test-first, in the order below.
-TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), and TDD
-0003 (Neon Postgres, checkpointing, persistent memory) have landed — the old
-`src/` and `web/` directories from the previous implementation have been
-removed.
+TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), TDD 0003
+(Neon Postgres, checkpointing, persistent memory), and TDD 0004 (`docs-store`
+and `analytics` MCP servers) have landed — the old `src/` and `web/`
+directories from the previous implementation have been removed.
 
 ## Implementation sequence (TDDs)
 

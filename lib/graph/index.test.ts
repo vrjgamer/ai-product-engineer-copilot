@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const generateText = vi.fn();
+const searchDocsTool = vi.fn();
+const getRepoStatsTool = vi.fn();
 
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateText(...args),
@@ -10,7 +12,28 @@ vi.mock("../models/provider", () => ({
   getModel: () => ({ modelId: "mock-model" }),
 }));
 
+// Only the real (I/O-doing) tool-call functions are mocked — formatDocsContext/
+// formatRepoStats stay real, pure functions, so prompt-building doesn't need
+// re-implementing here.
+vi.mock("../../mcp/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../mcp/tools")>();
+  return {
+    ...actual,
+    searchDocsTool: (...args: unknown[]) => searchDocsTool(...args),
+    getRepoStatsTool: (...args: unknown[]) => getRepoStatsTool(...args),
+  };
+});
+
 import { buildGraph } from "./index";
+
+const FIXTURE_REPO_STATS = {
+  repo: "vrjgamer/ai-product-engineer-copilot",
+  stars: 10,
+  openIssues: 2,
+  commitVelocity: 5,
+  prMergeRate: 0.8,
+  fetchedAt: "2026-01-01T00:00:00.000Z",
+};
 
 // Each node's system prompt starts with a unique "You are a <role>" phrase
 // (see lib/graph/nodes/*.ts) — these substrings don't collide with each
@@ -45,6 +68,10 @@ describe("buildGraph", () => {
     generateText.mockImplementation(async ({ system }: { system: string }) => ({
       text: CONTENT_BY_NODE[nodeNameFor(system)],
     }));
+    searchDocsTool.mockReset();
+    searchDocsTool.mockResolvedValue({ passages: [] });
+    getRepoStatsTool.mockReset();
+    getRepoStatsTool.mockResolvedValue(FIXTURE_REPO_STATS);
   });
 
   it("runs prdAgent before any of the three fan-out nodes start", async () => {
@@ -176,5 +203,41 @@ describe("buildGraph", () => {
     expect(finalState.experimentDesign).not.toBeNull();
     expect(finalState.roadmap).not.toBeNull();
     expect(finalState.errors).toEqual([]);
+  });
+
+  it("degrades prdAgent's output instead of failing the run when docs-store's search_docs throws", async () => {
+    // prdAgent is the only node that has called searchDocsTool by the time
+    // it runs (the fan-out nodes haven't started yet), so rejecting the
+    // first call targets prdAgent deterministically.
+    searchDocsTool.mockRejectedValueOnce(new Error("docs-store unreachable"));
+
+    const graph = buildGraph();
+    const finalState = await graph.invoke({ request: "Build a todo app" });
+
+    expect(finalState.prd?.content).toContain("PRD content");
+    expect(finalState.prd?.content).toContain("unavailable");
+    expect(finalState.errors).toEqual(
+      expect.arrayContaining([{ node: "prdAgent", message: "docs-store unreachable" }]),
+    );
+    expect(finalState.result).not.toBeNull();
+  });
+
+  it("degrades roadmapAgent's output instead of failing the run when analytics's get_repo_stats throws", async () => {
+    // architectureReviewAgent's fan-out call to getRepoStatsTool always
+    // completes before roadmapAgent's (roadmapAgent only runs after the
+    // fan-out joins), so the first call succeeds and the second — roadmap's
+    // — is the one that fails.
+    getRepoStatsTool.mockResolvedValueOnce(FIXTURE_REPO_STATS);
+    getRepoStatsTool.mockRejectedValueOnce(new Error("GitHub API rate-limited"));
+
+    const graph = buildGraph();
+    const finalState = await graph.invoke({ request: "Build a todo app" });
+
+    expect(finalState.roadmap?.content).toContain("Roadmap content");
+    expect(finalState.roadmap?.content).toContain("unavailable");
+    expect(finalState.errors).toEqual(
+      expect.arrayContaining([{ node: "roadmapAgent", message: "GitHub API rate-limited" }]),
+    );
+    expect(finalState.result).not.toBeNull();
   });
 });
