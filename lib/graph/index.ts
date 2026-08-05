@@ -8,16 +8,11 @@ import { prdAgent } from "./nodes/prdAgent";
 import { roadmapAgent } from "./nodes/roadmapAgent";
 import { supervisor } from "./nodes/supervisor";
 import { userStoryAgent } from "./nodes/userStoryAgent";
+import type { GraphNodeName } from "./progress";
+import { withNodeProgress } from "./progress";
 import { GraphAnnotation } from "./state";
 
-export type GraphNodeName =
-  | "supervisor"
-  | "prdAgent"
-  | "userStoryAgent"
-  | "architectureReviewAgent"
-  | "experimentDesignAgent"
-  | "roadmapAgent"
-  | "assembler";
+export type { GraphNodeName } from "./progress";
 
 export interface BuildGraphOptions {
   /**
@@ -42,13 +37,19 @@ export interface BuildGraphOptions {
  */
 export function buildGraph(options: BuildGraphOptions = {}) {
   return new StateGraph(GraphAnnotation)
-    .addNode("supervisor", supervisor)
-    .addNode("prdAgent", prdAgent)
-    .addNode("userStoryAgent", userStoryAgent)
-    .addNode("architectureReviewAgent", architectureReviewAgent)
-    .addNode("experimentDesignAgent", experimentDesignAgent)
-    .addNode("roadmapAgent", roadmapAgent)
-    .addNode("assembler", assembler)
+    .addNode("supervisor", withNodeProgress("supervisor", supervisor))
+    .addNode("prdAgent", withNodeProgress("prdAgent", prdAgent))
+    .addNode("userStoryAgent", withNodeProgress("userStoryAgent", userStoryAgent))
+    .addNode(
+      "architectureReviewAgent",
+      withNodeProgress("architectureReviewAgent", architectureReviewAgent),
+    )
+    .addNode(
+      "experimentDesignAgent",
+      withNodeProgress("experimentDesignAgent", experimentDesignAgent),
+    )
+    .addNode("roadmapAgent", withNodeProgress("roadmapAgent", roadmapAgent))
+    .addNode("assembler", withNodeProgress("assembler", assembler))
     .addEdge(START, "supervisor")
     .addEdge("supervisor", "prdAgent")
     .addEdge("prdAgent", "userStoryAgent")
