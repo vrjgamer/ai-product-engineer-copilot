@@ -44,9 +44,12 @@ The rebuild is underway: `ARCHITECTURE.md` and the Technical Design
 Documents under [`docs/tdd/`](./docs/tdd) describe the full target system.
 Implementation proceeds one TDD at a time, test-first, in the order below.
 TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), TDD 0003
-(Neon Postgres, checkpointing, persistent memory), and TDD 0004 (`docs-store`
-and `analytics` MCP servers) have landed — the old `src/` and `web/`
-directories from the previous implementation have been removed.
+(Neon Postgres, checkpointing, persistent memory), TDD 0004 (`docs-store` and
+`analytics` MCP servers), and TDD 0005 (the streaming route handler and the
+live demo UI) have landed — the old `src/` and `web/` directories from the
+previous implementation have been removed. The app is reachable end-to-end
+(`npm run dev`, free-text input → streamed progress → the five deliverables)
+as of TDD 0005; it isn't yet rate-limited (0006) or trace-linked (0007).
 
 ## Implementation sequence (TDDs)
 
@@ -67,5 +70,12 @@ without needing to re-derive the decisions in `ARCHITECTURE.md`.
 
 ## Setup
 
-Once the rebuild lands (TDD 1 onward), setup will be documented here. For
-now, see `ARCHITECTURE.md` and the TDDs above for the target design.
+```
+npm install
+cp .env.example .env.local   # fill in a model API key and DATABASE_URL
+npx tsx scripts/migrate.ts   # applies migrations/*.sql and checkpointer.setup()
+npm run dev
+```
+
+`npm test` runs the fully-mocked suite (no API keys/DB needed). See
+`ARCHITECTURE.md` §8 for the (separate, manually-invoked) real-API suite.

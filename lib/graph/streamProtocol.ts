@@ -1,0 +1,19 @@
+import type { ProgressEvent } from "./progress";
+import type { AssembledResult } from "./state";
+
+/**
+ * The wire-level event union `app/api/generate/route.ts` streams and
+ * `lib/client/parseProgressStream.ts` decodes: `ProgressEvent`s while the
+ * run is in flight, plus the run's terminal outcome (`result` on success,
+ * `fatal-error` if the run itself couldn't be started/finished — distinct
+ * from `state.errors`, which are per-node degradations the run survives).
+ */
+export type StreamEvent = ProgressEvent | { type: "result"; result: AssembledResult } | { type: "fatal-error"; message: string };
+
+/**
+ * Every `StreamEvent` is written as the `data` of this one custom UI-message
+ * data part (Vercel AI SDK data-stream protocol, `ai`'s `data-${name}` part
+ * convention) — a single channel is simpler for the client to filter for
+ * than one part type per event kind.
+ */
+export const PROGRESS_CHUNK_TYPE = "data-progress" as const;
