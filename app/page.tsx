@@ -7,6 +7,7 @@ import type { AssembledResult } from "../lib/graph/state";
 import type { StreamEvent } from "../lib/graph/streamProtocol";
 import { parseProgressStream } from "../lib/client/parseProgressStream";
 import { RunView, type RunStatus } from "./generate/RunView";
+import { RateLimitNote } from "./RateLimitNote";
 
 const EXAMPLE_PROMPTS = [
   "A mobile app that helps roommates split and track shared utility bills fairly",
@@ -20,12 +21,14 @@ export default function Home() {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [result, setResult] = useState<AssembledResult | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   async function run(requestText: string) {
     setStatus("running");
     setEvents([]);
     setResult(null);
     setFatalError(null);
+    setRateLimitMessage(null);
 
     try {
       const response = await fetch("/api/generate", {
@@ -33,6 +36,20 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ input: requestText }),
       });
+
+      if (response.status === 429) {
+        // TDD 0006: a friendly banner using the route's message, not the
+        // generic fatal-error state below.
+        const errorBody = await response.json().catch(() => null);
+        setRateLimitMessage(
+          typeof errorBody?.error === "string"
+            ? errorBody.error
+            : "Demo rate limit reached — try again later.",
+        );
+        setStatus("idle");
+        return;
+      }
+
       if (!response.ok || !response.body) {
         throw new Error(`Request failed (${response.status})`);
       }
@@ -69,6 +86,13 @@ export default function Home() {
     <main>
       <h1>AI Product Engineer Copilot</h1>
       <p>Describe the product or feature you want a plan for.</p>
+      <RateLimitNote />
+
+      {rateLimitMessage ? (
+        <p role="alert" data-testid="rate-limit-banner">
+          {rateLimitMessage}
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit}>
         <textarea

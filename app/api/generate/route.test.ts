@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 const buildGraph = vi.fn((..._args: unknown[]) => ({ invoke }));
 const getCheckpointer = vi.fn((..._args: unknown[]) => ({}) as never);
+const checkRateLimit = vi.fn(
+  (..._args: unknown[]) => Promise.resolve({ allowed: true }) as Promise<RateLimitResult>,
+);
 
 vi.mock("../../../lib/graph", () => ({
   buildGraph: (...args: unknown[]) => buildGraph(...args),
@@ -12,7 +15,12 @@ vi.mock("../../../lib/db/checkpointer", () => ({
   getCheckpointer: (...args: unknown[]) => getCheckpointer(...args),
 }));
 
+vi.mock("../../../lib/rate-limit/check", () => ({
+  checkRateLimit: (...args: unknown[]) => checkRateLimit(...args),
+}));
+
 import type { StreamEvent } from "../../../lib/graph/streamProtocol";
+import type { RateLimitResult } from "../../../lib/rate-limit/check";
 import { POST } from "./route";
 
 const RESULT = {
@@ -53,6 +61,8 @@ describe("POST /api/generate", () => {
     getCheckpointer.mockClear();
     invoke.mockReset();
     invoke.mockResolvedValue({ result: RESULT });
+    checkRateLimit.mockReset();
+    checkRateLimit.mockResolvedValue({ allowed: true });
   });
 
   it("invokes the graph from TDD 0002 with the request body's input and returns a streaming response", async () => {
@@ -128,5 +138,42 @@ describe("POST /api/generate", () => {
     expect(response.ok).toBe(true);
     const events = await drainStreamEvents(response);
     expect(events).toContainEqual({ type: "fatal-error", message: "checkpointer unreachable" });
+  });
+
+  it("returns a 429 with a friendly message and retry-after when the IP is rate-limited, without invoking the graph", async () => {
+    checkRateLimit.mockResolvedValue({ allowed: false, retryAfterSeconds: 300 });
+
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("300");
+    expect(buildGraph).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+
+    const body = (await response.json()) as { error: string; retryAfterSeconds: number };
+    expect(body.error).toContain("Demo rate limit reached");
+    expect(body.error).toContain("5 minutes");
+    expect(body.retryAfterSeconds).toBe(300);
+  });
+
+  it("checks the rate limit using the request's client IP", async () => {
+    await POST(
+      new Request("http://localhost/api/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.7, 10.0.0.1" },
+        body: JSON.stringify({ input: "Build a todo app" }),
+      }),
+    );
+
+    expect(checkRateLimit).toHaveBeenCalledWith("203.0.113.7");
+  });
+
+  it("does not invoke the graph for a rate-limited request even with an otherwise-invalid body", async () => {
+    checkRateLimit.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
+
+    const response = await POST(postRequest({ input: "" }));
+
+    expect(response.status).toBe(429);
+    expect(buildGraph).not.toHaveBeenCalled();
   });
 });
