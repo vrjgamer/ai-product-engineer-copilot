@@ -61,6 +61,19 @@ describe("RunView", () => {
     expect(screen.getByTestId("content-prd").textContent).toBe("PRD content");
   });
 
+  it("completed with a runId: shows a 'view trace' link (TDD 0007) pointing at /trace/<runId>", () => {
+    render(<RunView status="done" events={[]} result={FULL_RESULT} runId="run-123" />);
+
+    const link = screen.getByTestId("view-trace-link");
+    expect(link.getAttribute("href")).toBe("/trace/run-123");
+  });
+
+  it("completed with no runId yet: omits the 'view trace' link instead of linking to an unknown run", () => {
+    render(<RunView status="done" events={[]} result={FULL_RESULT} runId={null} />);
+
+    expect(screen.queryByTestId("view-trace-link")).toBeNull();
+  });
+
   it("completed with one degraded section: the degraded tab is marked and its panel shows the degraded note instead of omitting it", () => {
     const degradedResult: AssembledResult = {
       ...FULL_RESULT,

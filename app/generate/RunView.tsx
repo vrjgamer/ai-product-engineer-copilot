@@ -10,6 +10,8 @@ export interface RunViewProps {
   events: StreamEvent[];
   result: AssembledResult | null;
   fatalError?: string | null;
+  /** The completed run's ID (TDD 0007), used to link to `/trace/[runId]`. `null`/omitted before a result has arrived. */
+  runId?: string | null;
 }
 
 /**
@@ -20,7 +22,7 @@ export interface RunViewProps {
  * orchestrator in `app/page.tsx` owns the network call and feeds this
  * component the accumulated events.
  */
-export function RunView({ status, events, result, fatalError }: RunViewProps) {
+export function RunView({ status, events, result, fatalError, runId }: RunViewProps) {
   if (status === "idle") {
     return (
       <p data-testid="run-idle">
@@ -37,7 +39,16 @@ export function RunView({ status, events, result, fatalError }: RunViewProps) {
           Something went wrong{fatalError ? `: ${fatalError}` : "."}
         </p>
       ) : null}
-      {status === "done" && result ? <ResultView result={result} /> : null}
+      {status === "done" && result ? (
+        <>
+          {runId ? (
+            <a data-testid="view-trace-link" href={`/trace/${runId}`}>
+              View trace
+            </a>
+          ) : null}
+          <ResultView result={result} />
+        </>
+      ) : null}
     </div>
   );
 }

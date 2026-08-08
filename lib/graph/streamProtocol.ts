@@ -7,8 +7,14 @@ import type { AssembledResult } from "./state";
  * run is in flight, plus the run's terminal outcome (`result` on success,
  * `fatal-error` if the run itself couldn't be started/finished — distinct
  * from `state.errors`, which are per-node degradations the run survives).
+ * `result`'s `runId` (TDD 0007) is the same ID used as the checkpointer's
+ * thread_id and the trace's `run_id` — it's what the UI's "view trace" link
+ * points at.
  */
-export type StreamEvent = ProgressEvent | { type: "result"; result: AssembledResult } | { type: "fatal-error"; message: string };
+export type StreamEvent =
+  | ProgressEvent
+  | { type: "result"; result: AssembledResult; runId: string }
+  | { type: "fatal-error"; message: string };
 
 /**
  * Every `StreamEvent` is written as the `data` of this one custom UI-message

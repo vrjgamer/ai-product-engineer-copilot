@@ -11,8 +11,25 @@ import { userStoryAgent } from "./nodes/userStoryAgent";
 import type { GraphNodeName } from "./progress";
 import { withNodeProgress } from "./progress";
 import { GraphAnnotation } from "./state";
+import type { GraphState, GraphStateUpdate } from "./state";
+import { withNodeTracing } from "../tracing/collect";
 
 export type { GraphNodeName } from "./progress";
+
+/**
+ * Composes TDD 0005's progress emission and TDD 0007's trace collection
+ * around one node function — two independent `AsyncLocalStorage`-based
+ * wrappers (see `lib/graph/progress.ts` and `lib/tracing/collect.ts`), each
+ * a no-op unless its own run wrapper (`withProgressEmitter` /
+ * `withRunTracing`) is active.
+ */
+function instrumented(
+  node: GraphNodeName,
+  fn: (state: GraphState) => Promise<GraphStateUpdate>,
+): (state: GraphState) => Promise<GraphStateUpdate> {
+  const withProgress = withNodeProgress(node, fn);
+  return (state: GraphState) => withNodeTracing(node, () => withProgress(state));
+}
 
 export interface BuildGraphOptions {
   /**
@@ -37,19 +54,19 @@ export interface BuildGraphOptions {
  */
 export function buildGraph(options: BuildGraphOptions = {}) {
   return new StateGraph(GraphAnnotation)
-    .addNode("supervisor", withNodeProgress("supervisor", supervisor))
-    .addNode("prdAgent", withNodeProgress("prdAgent", prdAgent))
-    .addNode("userStoryAgent", withNodeProgress("userStoryAgent", userStoryAgent))
+    .addNode("supervisor", instrumented("supervisor", supervisor))
+    .addNode("prdAgent", instrumented("prdAgent", prdAgent))
+    .addNode("userStoryAgent", instrumented("userStoryAgent", userStoryAgent))
     .addNode(
       "architectureReviewAgent",
-      withNodeProgress("architectureReviewAgent", architectureReviewAgent),
+      instrumented("architectureReviewAgent", architectureReviewAgent),
     )
     .addNode(
       "experimentDesignAgent",
-      withNodeProgress("experimentDesignAgent", experimentDesignAgent),
+      instrumented("experimentDesignAgent", experimentDesignAgent),
     )
-    .addNode("roadmapAgent", withNodeProgress("roadmapAgent", roadmapAgent))
-    .addNode("assembler", withNodeProgress("assembler", assembler))
+    .addNode("roadmapAgent", instrumented("roadmapAgent", roadmapAgent))
+    .addNode("assembler", instrumented("assembler", assembler))
     .addEdge(START, "supervisor")
     .addEdge("supervisor", "prdAgent")
     .addEdge("prdAgent", "userStoryAgent")

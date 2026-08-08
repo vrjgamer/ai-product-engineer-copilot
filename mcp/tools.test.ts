@@ -1,6 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatDocsContext, formatRepoStats } from "./tools";
+const callMcpTool = vi.fn();
+vi.mock("./client", () => ({ callMcpTool: (...args: unknown[]) => callMcpTool(...args) }));
+
+import { withNodeTracing, withRunTracing } from "../lib/tracing/collect";
+import { formatDocsContext, formatRepoStats, searchDocsTool } from "./tools";
+
+describe("withMcpCallProgress recording into the current node's trace (TDD 0007)", () => {
+  beforeEach(() => {
+    callMcpTool.mockReset();
+  });
+
+  it("records the tool name against whichever node is currently running", async () => {
+    callMcpTool.mockResolvedValueOnce({ passages: [] });
+
+    const { nodes } = await withRunTracing(() =>
+      withNodeTracing("prdAgent", () => searchDocsTool("query")),
+    );
+
+    expect(nodes).toEqual([expect.objectContaining({ node: "prdAgent", mcpCalls: ["search_docs"] })]);
+  });
+
+  it("still records the call even when the tool call itself throws", async () => {
+    callMcpTool.mockRejectedValueOnce(new Error("docs-store unreachable"));
+
+    const { nodes } = await withRunTracing(() =>
+      withNodeTracing("prdAgent", async () => {
+        await expect(searchDocsTool("query")).rejects.toThrow("docs-store unreachable");
+      }),
+    );
+
+    expect(nodes[0].mcpCalls).toEqual(["search_docs"]);
+  });
+});
 
 describe("formatDocsContext", () => {
   it("returns an empty string when there are no passages", () => {
