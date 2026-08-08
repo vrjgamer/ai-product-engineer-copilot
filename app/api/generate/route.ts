@@ -4,6 +4,8 @@ import { getCheckpointer } from "../../../lib/db/checkpointer";
 import { buildGraph } from "../../../lib/graph";
 import { withProgressEmitter } from "../../../lib/graph/progress";
 import { PROGRESS_CHUNK_TYPE, type StreamEvent } from "../../../lib/graph/streamProtocol";
+import { checkRateLimit } from "../../../lib/rate-limit/check";
+import { getClientIp } from "../../../lib/rate-limit/getClientIp";
 
 // Node.js runtime, not Edge — the Postgres checkpointer and MCP servers need
 // real Node APIs. `maxDuration: 300` is load-bearing (ARCHITECTURE.md §5):
@@ -26,6 +28,11 @@ interface GenerateRequestBody {
  * inside that final result rather than being treated as a run failure.
  */
 export async function POST(req: Request): Promise<Response> {
+  const rateLimitResult = await checkRateLimit(getClientIp(req));
+  if (!rateLimitResult.allowed) {
+    return rateLimitedResponse(rateLimitResult.retryAfterSeconds);
+  }
+
   let body: GenerateRequestBody;
   try {
     body = await req.json();
@@ -71,5 +78,15 @@ function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+/** TDD 0006: a clear, human-readable message plus a retry-after indication — not a bare 429. */
+function rateLimitedResponse(retryAfterSeconds: number): Response {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  const message = `Demo rate limit reached — try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+  return new Response(JSON.stringify({ error: message, retryAfterSeconds }), {
+    status: 429,
+    headers: { "content-type": "application/json", "retry-after": String(retryAfterSeconds) },
   });
 }
