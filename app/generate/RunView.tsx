@@ -25,25 +25,25 @@ export interface RunViewProps {
 export function RunView({ status, events, result, fatalError, runId }: RunViewProps) {
   if (status === "idle") {
     return (
-      <p data-testid="run-idle">
+      <p className="run-idle" data-testid="run-idle">
         Describe a product or feature above, or pick an example, to see a run.
       </p>
     );
   }
 
   return (
-    <div data-testid="run-view">
+    <div className="run" data-testid="run-view">
       <ProgressLog events={events} live={status === "running"} />
       {status === "error" ? (
-        <p role="alert" data-testid="run-fatal-error">
+        <p className="banner banner-error" role="alert" data-testid="run-fatal-error">
           Something went wrong{fatalError ? `: ${fatalError}` : "."}
         </p>
       ) : null}
       {status === "done" && result ? (
         <>
           {runId ? (
-            <a data-testid="view-trace-link" href={`/trace/${runId}`}>
-              View trace
+            <a className="trace-link" data-testid="view-trace-link" href={`/trace/${runId}`}>
+              View trace →
             </a>
           ) : null}
           <ResultView result={result} />

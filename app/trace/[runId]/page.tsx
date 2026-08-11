@@ -12,14 +12,16 @@ export default async function TracePage({ params }: TracePageProps) {
 
   if (!trace) {
     return (
-      <main>
-        <p data-testid="trace-not-found">No trace found for run {runId}.</p>
+      <main className="page">
+        <p className="empty-state" data-testid="trace-not-found">
+          No trace found for run {runId}.
+        </p>
       </main>
     );
   }
 
   return (
-    <main>
+    <main className="page">
       <TraceView trace={trace} />
     </main>
   );

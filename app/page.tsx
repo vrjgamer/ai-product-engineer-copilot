@@ -86,34 +86,46 @@ export default function Home() {
   }
 
   return (
-    <main>
-      <h1>AI Product Engineer Copilot</h1>
-      <p>Describe the product or feature you want a plan for.</p>
-      <RateLimitNote />
+    <main className="page">
+      <header className="hero">
+        <h1>AI Product Engineer Copilot</h1>
+        <p className="hero-lede">
+          Describe the product or feature you want a plan for. A multi-agent graph writes the PRD,
+          user stories, architecture review, experiment design, and roadmap.
+        </p>
+        <RateLimitNote />
+      </header>
 
       {rateLimitMessage ? (
-        <p role="alert" data-testid="rate-limit-banner">
+        <p className="banner" role="alert" data-testid="rate-limit-banner">
           {rateLimitMessage}
         </p>
       ) : null}
 
-      <form onSubmit={handleSubmit}>
+      <form className="card composer" onSubmit={handleSubmit}>
         <textarea
           value={input}
           onChange={(changeEvent) => setInput(changeEvent.target.value)}
           placeholder="Describe the product or feature you want a plan for"
           rows={4}
         />
-        <button type="submit" disabled={status === "running" || !input.trim()}>
-          {status === "running" ? "Generating…" : "Generate plan"}
-        </button>
+        <div className="composer-actions">
+          <button
+            className="btn-primary"
+            type="submit"
+            disabled={status === "running" || !input.trim()}
+          >
+            {status === "running" ? "Generating…" : "Generate plan"}
+          </button>
+        </div>
       </form>
 
-      <div>
-        <span>Or try an example: </span>
+      <div className="examples">
+        <span className="examples-label">Or try an example: </span>
         {EXAMPLE_PROMPTS.map((prompt) => (
           <button
             key={prompt}
+            className="chip"
             type="button"
             disabled={status === "running"}
             onClick={() => handleExampleClick(prompt)}

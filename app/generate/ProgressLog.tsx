@@ -28,20 +28,27 @@ export function ProgressLog({ events, live }: ProgressLogProps) {
   }
 
   return (
-    <section data-testid="progress-log" aria-live={live ? "polite" : "off"}>
-      {supervisorMessage ? <p data-testid="supervisor-decision">{supervisorMessage}</p> : null}
-      <ul data-testid="node-status-list">
+    <section className="card progress" data-testid="progress-log" aria-live={live ? "polite" : "off"}>
+      <h2 className="section-title">Run progress</h2>
+      {supervisorMessage ? (
+        <p className="supervisor-decision" data-testid="supervisor-decision">
+          {supervisorMessage}
+        </p>
+      ) : null}
+      <ul className="node-list" data-testid="node-status-list">
         {NODE_ORDER.map((node) => {
           const status = statusByNode.get(node) ?? "pending";
           return (
-            <li key={node} data-testid={`node-status-${node}`} data-status={status}>
-              {NODE_LABEL[node]}: {status}
+            <li className="node-row" key={node} data-testid={`node-status-${node}`} data-status={status}>
+              <span className="dot" aria-hidden="true" />
+              <span className="node-name">{NODE_LABEL[node]}</span>
+              <span className="node-state">{status}</span>
             </li>
           );
         })}
       </ul>
       {mcpCalls.length > 0 ? (
-        <ul data-testid="mcp-call-log">
+        <ul className="mcp-log" data-testid="mcp-call-log">
           {mcpCalls.map((call, index) => (
             <li key={index} data-testid="mcp-call-entry">
               {NODE_LABEL[call.node]} → {call.tool} ({call.status})
