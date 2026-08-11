@@ -104,7 +104,7 @@ and the real MCP servers, in order:
 Run it with:
 
 ```
-DATABASE_URL=postgres://... ANTHROPIC_API_KEY=sk-... GOOGLE_GENERATIVE_AI_API_KEY=... npx tsx scripts/migrate.ts
+DATABASE_URL=postgres://... npx tsx scripts/migrate.ts
 DATABASE_URL=postgres://... ANTHROPIC_API_KEY=sk-... GOOGLE_GENERATIVE_AI_API_KEY=... GITHUB_TOKEN=ghp_... npm run test:e2e
 ```
 
