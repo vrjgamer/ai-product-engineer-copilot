@@ -46,13 +46,15 @@ Implementation proceeds one TDD at a time, test-first, in the order below.
 TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), TDD 0003
 (Neon Postgres, checkpointing, persistent memory), TDD 0004 (`docs-store` and
 `analytics` MCP servers), TDD 0005 (the streaming route handler and the live
-demo UI), TDD 0006 (IP-based rate limiting), and TDD 0007 (lightweight
-per-run tracing) have landed — the old `src/` and `web/` directories from
-the previous implementation have been removed. The app is reachable
-end-to-end (`npm run dev`, free-text input → streamed progress → the five
-deliverables) as of TDD 0005, rate-limited (5 runs/hour/IP, configurable) as
-of TDD 0006, and every completed run links to a trace view (per-node
-latency, token usage, MCP calls, and cost) as of TDD 0007.
+demo UI), TDD 0006 (IP-based rate limiting), TDD 0007 (lightweight per-run
+tracing), and TDD 0008 (CI workflow, mocked-vs-real-API test split) have
+landed — the old `src/` and `web/` directories from the previous
+implementation have been removed. The app is reachable end-to-end (`npm run
+dev`, free-text input → streamed progress → the five deliverables) as of
+TDD 0005, rate-limited (5 runs/hour/IP, configurable) as of TDD 0006, every
+completed run links to a trace view (per-node latency, token usage, MCP
+calls, and cost) as of TDD 0007, and every push/PR runs the mocked suite in
+CI as of TDD 0008.
 
 ## Implementation sequence (TDDs)
 
@@ -80,5 +82,35 @@ npx tsx scripts/migrate.ts   # applies migrations/*.sql and checkpointer.setup()
 npm run dev
 ```
 
-`npm test` runs the fully-mocked suite (no API keys/DB needed). See
-`ARCHITECTURE.md` §8 for the (separate, manually-invoked) real-API suite.
+`npm test` runs the fully-mocked suite (no API keys/DB needed) and is what
+CI (`.github/workflows/ci.yml`) runs on every push/PR, alongside `npm run
+typecheck` and `npm run lint`. See `ARCHITECTURE.md` §8 for the rationale
+behind keeping the suite below manual-only and out of CI.
+
+`npm run test:e2e` is that separate, manually-invoked suite — it is **not**
+run in CI. It calls the real model provider, a real Postgres checkpointer,
+and the real MCP servers, in order:
+
+1. `scripts/model-roundtrip.ts` — one real `generateText` call through the
+   configured model provider (TDD 0001).
+2. `scripts/checkpoint-roundtrip.ts` — interrupts and resumes the real
+   LangGraph graph against a real Postgres checkpointer, asserting the
+   resumed run continues from the saved state instead of restarting (TDD
+   0003).
+3. `scripts/mcp-roundtrip.ts` — calls the real `get_repo_stats` and
+   `search_docs` MCP tools against real GitHub data and a real indexed
+   corpus (TDD 0004).
+
+Run it with:
+
+```
+DATABASE_URL=postgres://... npx tsx scripts/migrate.ts
+DATABASE_URL=postgres://... ANTHROPIC_API_KEY=sk-... GOOGLE_GENERATIVE_AI_API_KEY=... GITHUB_TOKEN=ghp_... npm run test:e2e
+```
+
+(`GITHUB_TOKEN` is optional but recommended for `get_repo_stats` — see
+`.env.example`. `scripts/index-docs.ts` must have been run against
+`DATABASE_URL` beforehand so `search_docs` has a corpus to query.) A full
+real end-to-end run through the actual streaming route and UI (TDD 0005) is
+verified manually via `npm run dev` — it isn't automated, since asserting
+streaming UX over a real ~300s run isn't practical in a script.
