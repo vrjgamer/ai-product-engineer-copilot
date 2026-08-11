@@ -4,8 +4,12 @@ import { getCheckpointer } from "../../../lib/db/checkpointer";
 import { buildGraph } from "../../../lib/graph";
 import { withProgressEmitter } from "../../../lib/graph/progress";
 import { PROGRESS_CHUNK_TYPE, type StreamEvent } from "../../../lib/graph/streamProtocol";
+import { getModelConfig } from "../../../lib/models/provider";
 import { checkRateLimit } from "../../../lib/rate-limit/check";
 import { getClientIp } from "../../../lib/rate-limit/getClientIp";
+import { withRunTracing } from "../../../lib/tracing/collect";
+import { computeTotalCostUsd, getPricing } from "../../../lib/tracing/pricing";
+import { recordRunTrace } from "../../../lib/tracing/record";
 
 // Node.js runtime, not Edge — the Postgres checkpointer and MCP servers need
 // real Node APIs. `maxDuration: 300` is load-bearing (ARCHITECTURE.md §5):
@@ -52,14 +56,34 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const graph = buildGraph({ checkpointer: getCheckpointer() });
         const threadId = globalThis.crypto.randomUUID();
+        const startedAt = new Date();
 
-        const finalState = await withProgressEmitter(emit, "supervisor", () =>
-          graph.invoke({ request: input }, { configurable: { thread_id: threadId } }),
+        const { result: finalState, nodes } = await withRunTracing(() =>
+          withProgressEmitter(emit, "supervisor", () =>
+            graph.invoke({ request: input }, { configurable: { thread_id: threadId } }),
+          ),
         );
+
+        // TDD 0007: one trace row per run — including a run whose state
+        // carries `errors` entries (graceful degradation, not a run
+        // failure). Best-effort: a tracing write failure shouldn't turn a
+        // successful run into a fatal-error event for the user.
+        try {
+          const { provider, modelId } = getModelConfig();
+          await recordRunTrace({
+            runId: threadId,
+            startedAt: startedAt.toISOString(),
+            endedAt: new Date().toISOString(),
+            nodes,
+            totalCostUsd: computeTotalCostUsd(nodes, getPricing(provider, modelId)),
+          });
+        } catch (tracingError) {
+          console.error("Failed to record run trace", tracingError);
+        }
 
         emit(
           finalState.result
-            ? { type: "result", result: finalState.result }
+            ? { type: "result", result: finalState.result, runId: threadId }
             : { type: "fatal-error", message: "The run completed without producing a result." },
         );
       } catch (error) {

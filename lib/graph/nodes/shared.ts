@@ -1,10 +1,13 @@
 import { generateText } from "ai";
 
 import { getModel } from "../../models/provider";
+import { recordTokenUsage } from "../../tracing/collect";
 import type { NodeError } from "../state";
 
+/** Real token counts, not estimates (TDD 0007, ARCHITECTURE.md §7) — recorded from the AI SDK's own `result.usage`, not computed after the fact. */
 export async function generateNodeText(system: string, prompt: string): Promise<string> {
-  const { text } = await generateText({ model: getModel(), system, prompt });
+  const { text, usage } = await generateText({ model: getModel(), system, prompt });
+  recordTokenUsage(usage?.inputTokens, usage?.outputTokens);
   return text;
 }
 

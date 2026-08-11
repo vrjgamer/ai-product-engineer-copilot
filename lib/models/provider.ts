@@ -12,13 +12,20 @@ const PROVIDER_API_KEY_ENV_VAR: Record<string, string> = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 };
 
+/** Resolves `MODEL_PROVIDER`/`MODEL_ID` from the environment — shared by `getModel()` and TDD 0007's pricing lookup, which needs to know the model without constructing a client. */
+export function getModelConfig(): { provider: string; modelId: string } {
+  return {
+    provider: process.env.MODEL_PROVIDER ?? DEFAULT_PROVIDER,
+    modelId: process.env.MODEL_ID ?? DEFAULT_MODEL_ID,
+  };
+}
+
 /**
  * The only place in the codebase that imports a `@ai-sdk/*` provider package
  * directly. Every graph node calls `getModel()`, never a provider package.
  */
 export function getModel(): LanguageModel {
-  const provider = process.env.MODEL_PROVIDER ?? DEFAULT_PROVIDER;
-  const modelId = process.env.MODEL_ID ?? DEFAULT_MODEL_ID;
+  const { provider, modelId } = getModelConfig();
 
   const apiKeyEnvVar = PROVIDER_API_KEY_ENV_VAR[provider];
   if (!apiKeyEnvVar) {

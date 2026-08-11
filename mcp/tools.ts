@@ -4,14 +4,17 @@ import { callMcpTool } from "./client";
 import { createDocsStoreServer } from "./docs-store/server";
 import type { SearchDocsResult } from "./docs-store/searchDocs";
 import { emitMcpCall } from "../lib/graph/progress";
+import { recordMcpCall } from "../lib/tracing/collect";
 
 /**
  * Reports an MCP tool call's start/completion to TDD 0005's streaming route
- * (a no-op outside a route-handler run — see `lib/graph/progress.ts`)
- * without changing this function's return value or thrown errors.
+ * and records it against the current node's trace (TDD 0007) — both are
+ * no-ops outside their respective run wrappers — without changing this
+ * function's return value or thrown errors.
  */
 async function withMcpCallProgress<T>(tool: string, call: () => Promise<T>): Promise<T> {
   emitMcpCall(tool, "started");
+  recordMcpCall(tool);
   try {
     const result = await call();
     emitMcpCall(tool, "completed");

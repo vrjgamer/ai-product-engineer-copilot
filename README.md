@@ -46,12 +46,13 @@ Implementation proceeds one TDD at a time, test-first, in the order below.
 TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), TDD 0003
 (Neon Postgres, checkpointing, persistent memory), TDD 0004 (`docs-store` and
 `analytics` MCP servers), TDD 0005 (the streaming route handler and the live
-demo UI), and TDD 0006 (IP-based rate limiting) have landed — the old `src/`
-and `web/` directories from the previous implementation have been removed.
-The app is reachable end-to-end (`npm run dev`, free-text input → streamed
-progress → the five deliverables) as of TDD 0005, and rate-limited (5
-runs/hour/IP, configurable) as of TDD 0006; it isn't yet trace-linked
-(0007).
+demo UI), TDD 0006 (IP-based rate limiting), and TDD 0007 (lightweight
+per-run tracing) have landed — the old `src/` and `web/` directories from
+the previous implementation have been removed. The app is reachable
+end-to-end (`npm run dev`, free-text input → streamed progress → the five
+deliverables) as of TDD 0005, rate-limited (5 runs/hour/IP, configurable) as
+of TDD 0006, and every completed run links to a trace view (per-node
+latency, token usage, MCP calls, and cost) as of TDD 0007.
 
 ## Implementation sequence (TDDs)
 

@@ -6,6 +6,7 @@ const getCheckpointer = vi.fn((..._args: unknown[]) => ({}) as never);
 const checkRateLimit = vi.fn(
   (..._args: unknown[]) => Promise.resolve({ allowed: true }) as Promise<RateLimitResult>,
 );
+const recordRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("../../../lib/graph", () => ({
   buildGraph: (...args: unknown[]) => buildGraph(...args),
@@ -19,8 +20,17 @@ vi.mock("../../../lib/rate-limit/check", () => ({
   checkRateLimit: (...args: unknown[]) => checkRateLimit(...args),
 }));
 
+// TDD 0007: recordRunTrace is the only tracing call worth mocking here —
+// buildGraph itself is mocked, so no instrumented node ever runs, and the
+// real (fully synchronous, no I/O) pricing/collect modules are fine to
+// exercise for real.
+vi.mock("../../../lib/tracing/record", () => ({
+  recordRunTrace: (...args: unknown[]) => recordRunTrace(...args),
+}));
+
 import type { StreamEvent } from "../../../lib/graph/streamProtocol";
 import type { RateLimitResult } from "../../../lib/rate-limit/check";
+import type { RunTrace } from "../../../lib/tracing/record";
 import { POST } from "./route";
 
 const RESULT = {
@@ -63,6 +73,8 @@ describe("POST /api/generate", () => {
     invoke.mockResolvedValue({ result: RESULT });
     checkRateLimit.mockReset();
     checkRateLimit.mockResolvedValue({ allowed: true });
+    recordRunTrace.mockReset();
+    recordRunTrace.mockResolvedValue(undefined);
   });
 
   it("invokes the graph from TDD 0002 with the request body's input and returns a streaming response", async () => {
@@ -76,7 +88,32 @@ describe("POST /api/generate", () => {
 
     const events = await drainStreamEvents(response);
     const result = events.find((event) => event.type === "result");
-    expect(result).toEqual({ type: "result", result: RESULT });
+    expect(result).toEqual({ type: "result", result: RESULT, runId: expect.any(String) });
+  });
+
+  it("records a run trace (TDD 0007) keyed by the same run id streamed in the result event", async () => {
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+    const events = await drainStreamEvents(response);
+
+    const result = events.find((event) => event.type === "result") as Extract<
+      StreamEvent,
+      { type: "result" }
+    >;
+    expect(recordRunTrace).toHaveBeenCalledTimes(1);
+    const [trace] = recordRunTrace.mock.calls[0] as [RunTrace];
+    expect(trace.runId).toBe(result.runId);
+    expect(typeof trace.totalCostUsd).toBe("number");
+    expect(Array.isArray(trace.nodes)).toBe(true);
+  });
+
+  it("still streams the result even when recording the run trace fails", async () => {
+    recordRunTrace.mockRejectedValue(new Error("DB unreachable"));
+
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+    const events = await drainStreamEvents(response);
+
+    const result = events.find((event) => event.type === "result");
+    expect(result).toEqual({ type: "result", result: RESULT, runId: expect.any(String) });
   });
 
   it("rejects a request with no input without invoking the graph", async () => {
@@ -127,7 +164,7 @@ describe("POST /api/generate", () => {
     const events = await drainStreamEvents(response);
 
     const result = events.find((event) => event.type === "result");
-    expect(result).toEqual({ type: "result", result: degraded });
+    expect(result).toEqual({ type: "result", result: degraded, runId: expect.any(String) });
   });
 
   it("streams a fatal-error event instead of throwing when the graph run itself fails", async () => {
@@ -138,6 +175,8 @@ describe("POST /api/generate", () => {
     expect(response.ok).toBe(true);
     const events = await drainStreamEvents(response);
     expect(events).toContainEqual({ type: "fatal-error", message: "checkpointer unreachable" });
+    // The run itself never completed, so there's nothing meaningful to trace.
+    expect(recordRunTrace).not.toHaveBeenCalled();
   });
 
   it("returns a 429 with a friendly message and retry-after when the IP is rate-limited, without invoking the graph", async () => {

@@ -20,6 +20,7 @@ export default function Home() {
   const [status, setStatus] = useState<RunStatus>("idle");
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [result, setResult] = useState<AssembledResult | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
@@ -27,6 +28,7 @@ export default function Home() {
     setStatus("running");
     setEvents([]);
     setResult(null);
+    setRunId(null);
     setFatalError(null);
     setRateLimitMessage(null);
 
@@ -57,6 +59,7 @@ export default function Home() {
       for await (const event of parseProgressStream(response.body)) {
         if (event.type === "result") {
           setResult(event.result);
+          setRunId(event.runId);
         } else if (event.type === "fatal-error") {
           setFatalError(event.message);
         } else {
@@ -120,7 +123,7 @@ export default function Home() {
         ))}
       </div>
 
-      <RunView status={status} events={events} result={result} fatalError={fatalError} />
+      <RunView status={status} events={events} result={result} fatalError={fatalError} runId={runId} />
     </main>
   );
 }
