@@ -7,7 +7,7 @@
  */
 export function RateLimitNote() {
   return (
-    <p data-testid="rate-limit-note">
+    <p className="note" data-testid="rate-limit-note">
       This public demo is limited to 5 runs/hour per visitor and uses Claude Haiku 4.5 to
       keep it sustainable on a free-tier deployment.
     </p>

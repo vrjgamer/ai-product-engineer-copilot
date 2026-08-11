@@ -31,13 +31,14 @@ export function ResultView({ result }: ResultViewProps) {
   const erroredNodes = new Set(result.errors.map((error) => error.node));
 
   return (
-    <section data-testid="result-view">
-      <div role="tablist" data-testid="result-tabs">
+    <section className="card result" data-testid="result-view">
+      <div className="tablist" role="tablist" data-testid="result-tabs">
         {SECTIONS.map((section) => {
           const degraded = erroredNodes.has(section.node);
           return (
             <button
               key={section.key}
+              className="tab"
               role="tab"
               type="button"
               aria-selected={selected === section.key}
@@ -56,11 +57,11 @@ export function ResultView({ result }: ResultViewProps) {
         const content = result[section.key];
         const errorMessage = result.errors.find((error) => error.node === section.node)?.message;
         return (
-          <div key={section.key} role="tabpanel" data-testid={`panel-${section.key}`}>
+          <div className="panel" key={section.key} role="tabpanel" data-testid={`panel-${section.key}`}>
             {content ? (
               <p data-testid={`content-${section.key}`}>{content.content}</p>
             ) : (
-              <p data-testid={`unavailable-${section.key}`}>
+              <p className="unavailable" data-testid={`unavailable-${section.key}`}>
                 This section is unavailable{errorMessage ? ` — ${errorMessage}` : ""}.
               </p>
             )}
