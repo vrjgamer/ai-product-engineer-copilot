@@ -3,6 +3,7 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 
 import { architectureReviewAgent } from "./nodes/architectureReviewAgent";
 import { assembler } from "./nodes/assembler";
+import { clarificationGate } from "./nodes/clarificationGate";
 import { experimentDesignAgent } from "./nodes/experimentDesignAgent";
 import { prdAgent } from "./nodes/prdAgent";
 import { roadmapAgent } from "./nodes/roadmapAgent";
@@ -48,13 +49,19 @@ export interface BuildGraphOptions {
 }
 
 /**
- * `supervisor -> prdAgent -> [userStoryAgent, architectureReviewAgent,
- * experimentDesignAgent] -> roadmapAgent -> assembler -> END`.
- * See ARCHITECTURE.md §1 for why PRD runs alone before the fan-out.
+ * `supervisor -> (clarificationGate ->)? prdAgent -> [userStoryAgent,
+ * architectureReviewAgent, experimentDesignAgent] -> roadmapAgent ->
+ * assembler -> END`.
+ *
+ * See ARCHITECTURE.md §1 for why PRD runs alone before the fan-out, and §9
+ * for the clarification pause (TDD 0010) — the supervisor's conditional edge
+ * is the graph's one genuinely dynamic routing decision; every other edge is
+ * static.
  */
 export function buildGraph(options: BuildGraphOptions = {}) {
   return new StateGraph(GraphAnnotation)
     .addNode("supervisor", instrumented("supervisor", supervisor))
+    .addNode("clarificationGate", instrumented("clarificationGate", clarificationGate))
     .addNode("prdAgent", instrumented("prdAgent", prdAgent))
     .addNode("userStoryAgent", instrumented("userStoryAgent", userStoryAgent))
     .addNode(
@@ -68,7 +75,16 @@ export function buildGraph(options: BuildGraphOptions = {}) {
     .addNode("roadmapAgent", instrumented("roadmapAgent", roadmapAgent))
     .addNode("assembler", instrumented("assembler", assembler))
     .addEdge(START, "supervisor")
-    .addEdge("supervisor", "prdAgent")
+    // The one conditional edge in the graph (TDD 0010): pause for answers
+    // only when the supervisor actually produced questions. With none — the
+    // common case — this is the same static hop to `prdAgent` TDD 0002 had.
+    .addConditionalEdges(
+      "supervisor",
+      (state: GraphState) =>
+        state.clarifyingQuestions.length > 0 ? "clarificationGate" : "prdAgent",
+      ["clarificationGate", "prdAgent"],
+    )
+    .addEdge("clarificationGate", "prdAgent")
     .addEdge("prdAgent", "userStoryAgent")
     .addEdge("prdAgent", "architectureReviewAgent")
     .addEdge("prdAgent", "experimentDesignAgent")

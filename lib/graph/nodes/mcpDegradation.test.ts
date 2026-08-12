@@ -48,6 +48,8 @@ function contentOf(value: unknown): string | undefined {
 function baseState(overrides: Partial<GraphState> = {}): GraphState {
   return {
     request: "Build a todo app",
+    clarifyingQuestions: [],
+    clarifications: [],
     prd: null,
     userStories: null,
     architectureReview: null,

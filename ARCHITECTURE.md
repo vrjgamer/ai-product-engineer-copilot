@@ -9,7 +9,9 @@ design decision in this repo.
 > (plus `VISION.md` and `README.md`) to reconcile it with what actually got built: file
 > paths, table names, and env vars below are now the real ones, and the few places where
 > implementation reality diverged from the original plan say so explicitly rather than
-> leaving the plan's version standing. The decisions themselves are unchanged.
+> leaving the plan's version standing. TDD 0010 then built the first of the two
+> capabilities §9 had deferred — clarifying questions via interrupt/resume — so §1, §5 and
+> §9 below describe a graph that can pause. The decisions themselves are unchanged.
 
 **This is a rebuild, not an iteration.** The previous version of this project (hand-rolled
 planner/executor loop, fixture-only tests, a scripted/fake "live demo") is being replaced
@@ -42,7 +44,8 @@ explicit goal — a linear queue with dependency assertions is not a graph, it's
 
 ```
 Supervisor -> PRDAgent -> [UserStoryAgent, ArchitectureReviewAgent, ExperimentDesignAgent] -> RoadmapAgent -> Assembler
-                              (parallel; join before Roadmap)
+     |            ^           (parallel; join before Roadmap)
+     \-> ClarificationGate (TDD 0010; only when the request is too vague to plan against)
 ```
 
 - **PRD Agent runs first, alone.** Every other deliverable needs to know what's actually
@@ -63,14 +66,21 @@ Supervisor -> PRDAgent -> [UserStoryAgent, ArchitectureReviewAgent, ExperimentDe
   the old `assemble.ts` helpers played for MCP context — merging retrieved/generated
   content into one artifact, just now as a graph node instead of a post-hoc helper.
 
-**As built** (`lib/graph/index.ts`, TDD 0002): `buildGraph()` wires exactly these seven
-nodes and edges, with node implementations in `lib/graph/nodes/` and shared state in
-`lib/graph/state.ts`. One detail worth stating plainly rather than leaving implied: the
-`supervisor` node makes no model call — for this fixed graph shape the "routing decision"
-is a static edge to `prdAgent`. It exists as a node so richer routing has somewhere to
-land without changing the graph's shape, not because it's currently doing dynamic
-dispatch. The dependency ordering below is what the graph is actually buying here; the
-supervisor node is a seam, not a decision-maker.
+**As built** (`lib/graph/index.ts`, TDD 0002): `buildGraph()` wires exactly these nodes
+and edges, with node implementations in `lib/graph/nodes/` and shared state in
+`lib/graph/state.ts`.
+
+The `supervisor` node was, through TDD 0009, explicitly *not* a decision-maker: it made no
+model call, and its "routing decision" was a static edge to `prdAgent`. It existed as a
+node so richer routing had somewhere to land without changing the graph's shape. TDD 0010
+is that richer routing landing: the supervisor now makes one cheap triage call ("is this
+request specific enough to write a PRD from?") and the graph's one conditional edge sends
+the run either to `clarificationGate` — which pauses for answers (§9) — or straight on to
+`prdAgent` as before. The seam paid off exactly as intended: the graph *shape* absorbed a
+genuinely new capability without any node contract changing.
+
+Everything after that first hop is still statically wired. The dependency ordering below,
+not dynamic dispatch, remains what the graph is buying.
 
 **How sub-agents "know" about each other's decisions**: they don't communicate directly.
 LangGraph's `StateGraph` gives every node read/write access to one shared state object
@@ -211,8 +221,10 @@ checkpointer's own `setup()`).
 **One honest exception in that table.** `memory` and its store shipped in TDD 0003 and are
 tested, but nothing in the request path reads or writes them yet: the demo is single-shot
 and anonymous, so there is no user or project identity to scope facts by
-(`MemoryScope` needs a `userId`/`projectId` the product doesn't currently have). It is
-built infrastructure waiting on the multi-turn product shape deferred in §9, not a
+(`MemoryScope` needs a `userId`/`projectId` the product doesn't currently have). TDD 0010's
+clarifying questions looked like they'd finally give it one — they don't: an answer belongs
+to a run, not to a person, and hashed IPs (§6) are deliberately not an identity. So it
+remains built infrastructure waiting on a product shape that doesn't exist yet, not a
 currently-exercised capability — worth saying outright, since a persistence table listed
 in an architecture doc reads as "in use" by default.
 
@@ -250,6 +262,20 @@ tracing uses, on a second, independent store). The wire format is one `data-prog
 chunk per event (`lib/graph/streamProtocol.ts`), parsed on the client by
 `lib/client/parseProgressStream.ts`. The final assembled result arrives as the last event
 on that same stream, carrying the run ID §7's trace link needs.
+
+**The one exception to "entirely synchronously"** (TDD 0010): a run that pauses for
+clarifying questions is two requests, not one. The first ends its stream with a
+`clarification-request` event instead of a `result`; the browser posts the answers back to
+the *same* route as `{ runId, answers }`, and the second request resumes the checkpointed
+thread with LangGraph's `Command({ resume })`. This is still not a background job — no
+queue, no worker, no polling — because nothing runs between the two requests: the run is
+parked in Postgres, waiting on a human, and the duration budget below applies per leg
+rather than across the pause. What it does mean is that `run_traces` (§7) has to treat one
+run as two legs, which is why `appendRunTrace` exists alongside `recordRunTrace`.
+
+The resume deliberately does not consume a rate-limit unit (§6) — a paused run is one run.
+That is safe because the route refuses to resume a thread that is not actually parked at an
+interrupt, so a finished or unknown `runId` can't be replayed to buy another graph run.
 
 **Deployment constraint this depends on:** Vercel's Hobby (free) tier defaults to a
 60-second function duration, but with **Fluid Compute** (Vercel's current default
@@ -345,66 +371,75 @@ before a deploy.
 
 **As built** (TDD 0008): `npm test` is Vitest, needs no secrets, and runs alongside `npm
 run typecheck` and `npm run lint` in `.github/workflows/ci.yml` on every push to `main`
-and every PR. `npm run test:e2e` is three real-API scripts run in sequence —
+and every PR. `npm run test:e2e` is four real-API scripts run in sequence —
 `scripts/model-roundtrip.ts` (one real model call), `scripts/checkpoint-roundtrip.ts`
-(real Postgres checkpointer, interrupt and resume), `scripts/mcp-roundtrip.ts` (real
-`get_repo_stats` and `search_docs`) — and is deliberately absent from the CI workflow.
+(real Postgres checkpointer, interrupt and resume), `scripts/clarification-roundtrip.ts`
+(TDD 0010: a real triage call parks a run at `interrupt()`, a separately-constructed
+checkpointer resumes it), `scripts/mcp-roundtrip.ts` (real `get_repo_stats` and
+`search_docs`) — and is deliberately absent from the CI workflow.
 The one thing neither suite covers is the streaming UX of a full real run end-to-end
 through the route and page; that stays a manual `npm run dev` check, because asserting on
 a ~300-second streaming run isn't practical to automate at this project's scale.
 
 ---
 
-## 9. Future work (explicitly deferred, not silently dropped)
+## 9. Human-in-the-loop, and the one capability still deferred
 
-Two capabilities were designed against, then deliberately scoped out of v1. Both are still
-deferred after 0001-0008 shipped; what follows now describes them against the system as
-actually built, including what a later session would concretely have to touch.
+Two capabilities were designed against, then deliberately scoped out of v1. One of them has
+since been built; the other is still deferred, and still deliberately.
 
-- **Clarifying-question / human-in-the-loop support.** LangGraph has a native
-  `interrupt`/resume mechanism — a node can pause mid-graph, surface a question to the
-  user, and resume from that exact point later, which pairs naturally with the Postgres
-  checkpointer already in this design (a paused run's state is durably saved, keyed by
-  thread ID, and resumable from a later HTTP request). This was scoped out of v1 because
-  it changes the product's shape from single-shot (free-text in, stream out) to
-  multi-turn (a chat-like UI, a "resume this thread" API alongside "start a run"),  which
-  is real added surface area on top of everything else in this document. v1's sub-agents
-  instead make explicit assumptions when input is ambiguous and state them in the output,
-  rather than pausing to ask. This is the natural v2 feature, and the reason it's called
-  out here is that the infrastructure to support it (checkpointed, resumable graph state)
-  is already being built for other reasons — implementing interrupt/resume later is an
-  incremental addition, not a redesign.
+### Clarifying questions (built — TDD 0010)
 
-  *What 0003 actually left in place, and what's still missing.* The claim that the
-  infrastructure "is already being built" held up, and more concretely than expected:
-  `buildGraph()` already takes an `interruptAfter` option, the Postgres checkpointer is
-  wired in `lib/db/checkpointer.ts`, and `scripts/checkpoint-roundtrip.ts` proves the
-  hard half — a graph interrupted after `prdAgent` resumes through a *separately
-  constructed* checkpointer and continues from saved state rather than re-running the
-  node. Pause-and-resume across processes is therefore demonstrated, not hypothetical.
-  What's missing is everything around it: `app/api/generate/route.ts` mints a fresh
-  `thread_id` per POST and never accepts one, so there is no way for a client to name a
-  run to resume; the stream protocol (`lib/graph/streamProtocol.ts`) has no event type
-  for "a node is asking you something"; no node calls LangGraph's `interrupt()`; and the
-  page is a one-shot form with no thread state. So the remaining work is a resume
-  endpoint (or a `threadId` on the existing one), one new stream event type plus its UI
-  affordance, and the multi-turn page state — with the `memory` table from §4 finally
-  having an identity to scope facts by. Real surface area, but additive: none of it
-  changes the graph shape or the node contracts.
-- **Full eval/rigor layer** (§7) — golden-set regression testing, LLM-as-judge with bias
-  checks, the four-tag failure taxonomy. Deferred in favor of the lightweight run trace;
-  the natural upgrade path once this project has enough real usage/change volume to
-  justify a regression gate.
+The original entry here predicted that adding LangGraph's `interrupt`/resume would be "an
+incremental addition, not a redesign," because the checkpointed, resumable graph state it
+needs was already being built for other reasons. That prediction held: the graph shape and
+every node contract survived unchanged, and the work landed as one new node plus one
+conditional edge.
 
-  *Where it would attach, given what shipped.* `run_traces` records what a run *did*
-  (latency, tokens, cost, MCP calls) but nothing about whether the output was any *good* —
-  there is no quality column, and deliberately so. A later eval layer has two clean seams
-  to attach to: the trace row itself (a judge score per run, alongside the existing
-  per-node data) and the test split from §8, where a golden-set harness would be a third
-  mode next to the mocked `npm test` and the manual `npm run test:e2e` — it needs real
-  model calls, so it can't join the CI suite without changing that decision's terms.
+**How it works as built.** `supervisor` (§1) makes one cheap triage call deciding whether
+the request is specific enough to write a PRD from. If it isn't, it emits up to three
+questions and the graph's one conditional edge routes to `clarificationGate`
+(`lib/graph/nodes/clarificationGate.ts`), whose entire body is `interrupt()`. That throws,
+LangGraph parks the run at a durable Postgres checkpoint keyed by the run's `thread_id`,
+and the route ends the stream with a `clarification-request` event instead of a `result`
+(§5). The browser renders the questions, posts the answers back to the same route against
+that `runId`, and the resumed leg re-runs only the gate — `interrupt()` returns the answers
+this time — before continuing into `prdAgent`, which folds them into its prompt. Every
+other deliverable reads the PRD, so one node consuming the answers propagates them through
+the whole graph.
 
-The demo page carries a short, plain-language version of both of these
+**Two things that look like details and aren't.** The triage model call lives in
+`supervisor`, not in the gate, because *a node that interrupts re-runs from the top when
+resumed* — generating the questions inside the gate would pay for that call twice and could
+return different questions than the ones the user just answered. And `GraphInterrupt` is
+control flow, not failure: `withNodeProgress` has to recognize it and re-throw without
+emitting a `node-status`/`error` event, or the progress log shows the visitor a red error
+row at the exact moment the UI is asking them a question.
+
+**What was deliberately not built with it.** This is one pause, not a conversation: there
+is no second interrupt later in the graph, no follow-up on an answer, and no message
+history. A node that hits ambiguity after the PRD exists still states its assumption and
+keeps going, exactly as v1 did — and skipping the questions entirely is a first-class
+button in the UI, not a failure to fill in a form, because proceeding on stated assumptions
+was always a legitimate outcome. The `memory` table (§4) still has no identity to scope
+facts by; the answers would have been a natural hook, but this demo has no auth and hashed
+IPs are deliberately not an identity, so that stayed unbuilt rather than faked.
+
+### Full eval/rigor layer (still deferred)
+
+Golden-set regression testing, LLM-as-judge with bias checks, the four-tag failure taxonomy
+— deferred in favor of the lightweight run trace (§7); the natural upgrade path once this
+project has enough real usage/change volume to justify a regression gate.
+
+*Where it would attach, given what shipped.* `run_traces` records what a run *did*
+(latency, tokens, cost, MCP calls) but nothing about whether the output was any *good* —
+there is no quality column, and deliberately so. A later eval layer has two clean seams to
+attach to: the trace row itself (a judge score per run, alongside the existing per-node
+data) and the test split from §8, where a golden-set harness would be a third mode next to
+the mocked `npm test` and the manual `npm run test:e2e` — it needs real model calls, so it
+can't join the CI suite without changing that decision's terms.
+
+The demo page carries a short, plain-language version of what's still missing
 (`app/WhatsNextNote.tsx`) — a visitor who runs the demo shouldn't have to open this
 document to learn what it deliberately doesn't do.
 
@@ -422,7 +457,8 @@ document to learn what it deliberately doesn't do.
 | Request handling | Background job + polling/subscription | Doubles the moving parts for a low-traffic demo that synchronous streaming already handles |
 | Hosting | Vercel Pro | Free tier is workable given the parallelized graph shape and Fluid Compute's 300s ceiling |
 | Observability | Full golden-set/LLM-as-judge eval layer for v1 | Disproportionate infrastructure without production traffic/change volume to gate |
-| Conversation shape | Clarifying-question support (interrupt/resume) in v1 | Changes single-shot into multi-turn — real scope, deliberately deferred to v2 |
+| Conversation shape | Clarifying-question support (interrupt/resume) in v1 | Changed single-shot into multi-turn — real scope, deferred to v2 and since built by TDD 0010 |
+| Clarification shape | A full chat loop (ask, answer, re-ask, refine) | One pause before the PRD covers the ambiguity that actually breaks a plan; a chat is a different product |
 
 ---
 
@@ -431,8 +467,9 @@ document to learn what it deliberately doesn't do.
 This document describes the target architecture. The actual build was sequenced as a
 series of Technical Design Documents under [`docs/tdd/`](./docs/tdd), each scoped to be
 implementable standalone, test-first, by a future session without re-deriving the
-decisions above. All nine have landed; each one's "as built" notes are folded into the
-sections above.
+decisions above. All ten have landed; each one's "as built" notes are folded into the
+sections above. 0001-0008 built the system, 0009 reconciled these documents with it, and
+0010 built the first capability 0009 had recorded as deferred.
 
 1. [`0001-app-scaffold-and-model-provider.md`](./docs/tdd/0001-app-scaffold-and-model-provider.md)
 2. [`0002-langgraph-core.md`](./docs/tdd/0002-langgraph-core.md)
@@ -443,3 +480,4 @@ sections above.
 7. [`0007-run-tracing.md`](./docs/tdd/0007-run-tracing.md)
 8. [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md)
 9. [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md)
+10. [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md)

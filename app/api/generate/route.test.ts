@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-const buildGraph = vi.fn((..._args: unknown[]) => ({ invoke }));
+const getState = vi.fn((..._args: unknown[]) => Promise.resolve({ tasks: [] as { interrupts: unknown[] }[] }));
+const buildGraph = vi.fn((..._args: unknown[]) => ({ invoke, getState }));
 const getCheckpointer = vi.fn((..._args: unknown[]) => ({}) as never);
 const checkRateLimit = vi.fn(
   (..._args: unknown[]) => Promise.resolve({ allowed: true }) as Promise<RateLimitResult>,
 );
 const recordRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
+const appendRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("../../../lib/graph", () => ({
   buildGraph: (...args: unknown[]) => buildGraph(...args),
@@ -26,6 +28,7 @@ vi.mock("../../../lib/rate-limit/check", () => ({
 // exercise for real.
 vi.mock("../../../lib/tracing/record", () => ({
   recordRunTrace: (...args: unknown[]) => recordRunTrace(...args),
+  appendRunTrace: (...args: unknown[]) => appendRunTrace(...args),
 }));
 
 import type { StreamEvent } from "../../../lib/graph/streamProtocol";
@@ -75,6 +78,10 @@ describe("POST /api/generate", () => {
     checkRateLimit.mockResolvedValue({ allowed: true });
     recordRunTrace.mockReset();
     recordRunTrace.mockResolvedValue(undefined);
+    appendRunTrace.mockReset();
+    appendRunTrace.mockResolvedValue(undefined);
+    getState.mockReset();
+    getState.mockResolvedValue({ tasks: [] });
   });
 
   it("invokes the graph from TDD 0002 with the request body's input and returns a streaming response", async () => {
@@ -214,5 +221,111 @@ describe("POST /api/generate", () => {
 
     expect(response.status).toBe(429);
     expect(buildGraph).not.toHaveBeenCalled();
+  });
+});
+
+/** TDD 0010: the run can end a leg by asking instead of by finishing, and be resumed with the answers. */
+describe("POST /api/generate — clarifying questions", () => {
+  const QUESTIONS = ["Who is this for?", "What metric does it move?"];
+  const PAUSED_STATE = { result: null, __interrupt__: [{ value: { questions: QUESTIONS } }] };
+
+  beforeEach(() => {
+    buildGraph.mockClear();
+    getCheckpointer.mockClear();
+    invoke.mockReset();
+    invoke.mockResolvedValue({ result: RESULT });
+    checkRateLimit.mockReset();
+    checkRateLimit.mockResolvedValue({ allowed: true });
+    recordRunTrace.mockReset();
+    recordRunTrace.mockResolvedValue(undefined);
+    appendRunTrace.mockReset();
+    appendRunTrace.mockResolvedValue(undefined);
+    getState.mockReset();
+    getState.mockResolvedValue({ tasks: [{ interrupts: [{ value: { questions: QUESTIONS } }] }] });
+  });
+
+  async function startPausedRun(): Promise<string> {
+    invoke.mockResolvedValue(PAUSED_STATE);
+    const events = await drainStreamEvents(await POST(postRequest({ input: "an app" })));
+    const paused = events.find((event) => event.type === "clarification-request") as Extract<
+      StreamEvent,
+      { type: "clarification-request" }
+    >;
+    return paused.runId;
+  }
+
+  it("ends the first leg with a clarification-request instead of a result when the graph pauses", async () => {
+    invoke.mockResolvedValue(PAUSED_STATE);
+
+    const events = await drainStreamEvents(await POST(postRequest({ input: "an app" })));
+
+    expect(events).toContainEqual({
+      type: "clarification-request",
+      runId: expect.any(String),
+      questions: QUESTIONS,
+    });
+    expect(events.find((event) => event.type === "result")).toBeUndefined();
+    // A paused leg is not a failed run.
+    expect(events.find((event) => event.type === "fatal-error")).toBeUndefined();
+  });
+
+  it("resumes the same thread with the submitted answers", async () => {
+    const runId = await startPausedRun();
+    invoke.mockReset();
+    invoke.mockResolvedValue({ result: RESULT });
+
+    const events = await drainStreamEvents(
+      await POST(postRequest({ runId, answers: ["Designers", "Weekly active projects"] })),
+    );
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const [command, config] = invoke.mock.calls[0] as [{ resume?: unknown }, { configurable: { thread_id: string } }];
+    expect(command.resume).toEqual(["Designers", "Weekly active projects"]);
+    expect(config.configurable.thread_id).toBe(runId);
+    expect(events).toContainEqual({ type: "result", result: RESULT, runId });
+  });
+
+  it("appends the resumed leg to the run's existing trace rather than replacing it", async () => {
+    await POST(postRequest({ runId: "run-1", answers: [""] }));
+
+    expect(appendRunTrace).toHaveBeenCalledTimes(1);
+    expect(recordRunTrace).not.toHaveBeenCalled();
+    const [trace] = appendRunTrace.mock.calls[0] as [RunTrace];
+    expect(trace.runId).toBe("run-1");
+  });
+
+  it("does not spend a rate-limit unit on the resume — a paused run is one run", async () => {
+    await POST(postRequest({ runId: "run-1", answers: ["Designers"] }));
+
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a resume of a run that isn't parked at an interrupt, without invoking the graph", async () => {
+    getState.mockResolvedValue({ tasks: [] });
+
+    const response = await POST(postRequest({ runId: "already-finished", answers: ["Designers"] }));
+
+    expect(response.status).toBe(409);
+    // The guard is what makes skipping the rate-limit check safe: a finished
+    // or unknown run can't be replayed to buy another graph run for free.
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects a resume with no runId or non-string answers without invoking the graph", async () => {
+    expect((await POST(postRequest({ runId: "   ", answers: [] }))).status).toBe(400);
+    expect((await POST(postRequest({ runId: "run-1", answers: "Designers" }))).status).toBe(400);
+    expect((await POST(postRequest({ runId: "run-1", answers: [42] }))).status).toBe(400);
+    expect((await POST(postRequest({ runId: "run-1" }))).status).toBe(400);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("accepts a resume that skips every question", async () => {
+    const events = await drainStreamEvents(
+      await POST(postRequest({ runId: "run-1", answers: ["", ""] })),
+    );
+
+    const [command] = invoke.mock.calls[0] as [{ resume?: unknown }];
+    expect(command.resume).toEqual(["", ""]);
+    expect(events).toContainEqual({ type: "result", result: RESULT, runId: "run-1" });
   });
 });

@@ -25,6 +25,12 @@ export interface NodeError {
   message: string;
 }
 
+/** One clarifying question the supervisor asked and the answer the user gave (TDD 0010). */
+export interface Clarification {
+  question: string;
+  answer: string;
+}
+
 export interface AssembledResult {
   prd: PrdOutput | null;
   userStories: UserStoryOutput | null;
@@ -44,8 +50,21 @@ const overwrite = <T>() => ({
  * write an entry in the same superstep — a last-value reducer would throw on
  * concurrent writes to the same key.
  */
+const overwriteWith = <T>(initial: () => T) => ({
+  reducer: (_current: T, update: T) => update,
+  default: initial,
+});
+
+/**
+ * `clarifyingQuestions` is written by `supervisor` and read by
+ * `clarificationGate`; `clarifications` is written by the gate once the user
+ * answers and read by `prdAgent` (TDD 0010). Both default to empty, so the
+ * unclarified path — the common one — carries no extra state.
+ */
 export const GraphAnnotation = Annotation.Root({
   request: Annotation<string>,
+  clarifyingQuestions: Annotation<string[]>(overwriteWith<string[]>(() => [])),
+  clarifications: Annotation<Clarification[]>(overwriteWith<Clarification[]>(() => [])),
   prd: Annotation<PrdOutput | null>(overwrite<PrdOutput | null>()),
   userStories: Annotation<UserStoryOutput | null>(overwrite<UserStoryOutput | null>()),
   architectureReview: Annotation<ArchitectureReviewOutput | null>(

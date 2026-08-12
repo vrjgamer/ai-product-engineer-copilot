@@ -1,7 +1,8 @@
+import { Command } from "@langchain/langgraph";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { getCheckpointer } from "../../../lib/db/checkpointer";
-import { buildGraph } from "../../../lib/graph";
+import { buildGraph, type CompiledGraph } from "../../../lib/graph";
 import { withProgressEmitter } from "../../../lib/graph/progress";
 import { PROGRESS_CHUNK_TYPE, type StreamEvent } from "../../../lib/graph/streamProtocol";
 import { getModelConfig } from "../../../lib/models/provider";
@@ -9,7 +10,7 @@ import { checkRateLimit } from "../../../lib/rate-limit/check";
 import { getClientIp } from "../../../lib/rate-limit/getClientIp";
 import { withRunTracing } from "../../../lib/tracing/collect";
 import { computeTotalCostUsd, getPricing } from "../../../lib/tracing/pricing";
-import { recordRunTrace } from "../../../lib/tracing/record";
+import { appendRunTrace, recordRunTrace } from "../../../lib/tracing/record";
 
 // Node.js runtime, not Edge — the Postgres checkpointer and MCP servers need
 // real Node APIs. `maxDuration: 300` is load-bearing (ARCHITECTURE.md §5):
@@ -20,28 +21,40 @@ export const maxDuration = 300;
 
 interface GenerateRequestBody {
   input?: unknown;
+  runId?: unknown;
+  answers?: unknown;
 }
 
 /**
  * Runs the graph from TDD 0002 (with TDD 0003's checkpointer and TDD 0004's
- * MCP-wired nodes) for one request and streams progress as it happens —
- * supervisor routing, per-node start/complete/error, MCP tool calls — via
- * the Vercel AI SDK's data-stream protocol, ending with the assembled
- * result (or a fatal-error event if the run itself couldn't complete).
- * `state.errors` entries (TDD 0002's graceful-degradation contract) travel
- * inside that final result rather than being treated as a run failure.
+ * MCP-wired nodes) and streams progress as it happens — supervisor routing,
+ * per-node start/complete/error, MCP tool calls — via the Vercel AI SDK's
+ * data-stream protocol, ending with the assembled result (or a fatal-error
+ * event if the run itself couldn't complete). `state.errors` entries (TDD
+ * 0002's graceful-degradation contract) travel inside that final result
+ * rather than being treated as a run failure.
+ *
+ * Two request shapes (TDD 0010), because a run can pause:
+ * - `{ input }` starts a run on a fresh thread.
+ * - `{ runId, answers }` resumes one parked at `clarificationGate`, which
+ *   ended its first leg with a `clarification-request` event instead of a
+ *   `result`.
  */
 export async function POST(req: Request): Promise<Response> {
+  let body: GenerateRequestBody;
+  try {
+    body = (await req.json()) as GenerateRequestBody;
+  } catch {
+    return jsonError("Request body must be valid JSON.", 400);
+  }
+
+  return body.runId === undefined ? startRun(req, body) : resumeRun(body);
+}
+
+async function startRun(req: Request, body: GenerateRequestBody): Promise<Response> {
   const rateLimitResult = await checkRateLimit(getClientIp(req));
   if (!rateLimitResult.allowed) {
     return rateLimitedResponse(rateLimitResult.retryAfterSeconds);
-  }
-
-  let body: GenerateRequestBody;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError("Request body must be valid JSON.", 400);
   }
 
   const input = typeof body.input === "string" ? body.input.trim() : "";
@@ -49,43 +62,98 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError('Request body must include a non-empty "input" string.', 400);
   }
 
+  const runId = globalThis.crypto.randomUUID();
+  return streamRun(runId, (graph) =>
+    graph.invoke({ request: input }, { configurable: { thread_id: runId } }),
+  );
+}
+
+/**
+ * A resume deliberately does *not* consume a rate-limit unit: TDD 0006's
+ * limiter counts runs, and a paused run is one run — charging twice would
+ * halve an interrupted visitor's budget for no added protection. What makes
+ * that safe is the check below: only a thread actually parked at an
+ * interrupt can be resumed, so a completed or unknown `runId` can't be
+ * replayed to buy another graph run for free. `runId` is a server-minted
+ * UUID, so it isn't guessable either.
+ */
+async function resumeRun(body: GenerateRequestBody): Promise<Response> {
+  const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+  if (!runId) {
+    return jsonError('Request body\'s "runId" must be a non-empty string.', 400);
+  }
+
+  if (!Array.isArray(body.answers) || body.answers.some((answer) => typeof answer !== "string")) {
+    return jsonError('Request body must include an "answers" array of strings.', 400);
+  }
+  const answers = body.answers as string[];
+
+  const config = { configurable: { thread_id: runId } };
+  let paused: boolean;
+  try {
+    const snapshot = await buildGraph({ checkpointer: getCheckpointer() }).getState(config);
+    paused = snapshot.tasks.some((task) => (task.interrupts?.length ?? 0) > 0);
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : String(error), 500);
+  }
+
+  if (!paused) {
+    return jsonError("That run isn't waiting for answers — start a new one.", 409);
+  }
+
+  return streamRun(runId, (graph) => graph.invoke(new Command({ resume: answers }), config), {
+    resumed: true,
+  });
+}
+
+interface StreamRunOptions {
+  /** A resumed leg appends to the run's existing trace row instead of replacing it (TDD 0010). */
+  resumed?: boolean;
+}
+
+/**
+ * The half both request shapes share: run one leg of the graph under the
+ * progress emitter and trace collector, persist the trace, then close the
+ * stream with whichever terminal event the leg produced — a `result`, a
+ * `clarification-request` if it parked at the gate, or a `fatal-error`.
+ */
+function streamRun(
+  runId: string,
+  invoke: (graph: CompiledGraph) => Promise<unknown>,
+  { resumed = false }: StreamRunOptions = {},
+): Response {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       const emit = (event: StreamEvent) => writer.write({ type: PROGRESS_CHUNK_TYPE, data: event });
 
       try {
         const graph = buildGraph({ checkpointer: getCheckpointer() });
-        const threadId = globalThis.crypto.randomUUID();
         const startedAt = new Date();
 
         const { result: finalState, nodes } = await withRunTracing(() =>
-          withProgressEmitter(emit, "supervisor", () =>
-            graph.invoke({ request: input }, { configurable: { thread_id: threadId } }),
-          ),
+          withProgressEmitter(emit, "supervisor", () => invoke(graph)),
         );
 
         // TDD 0007: one trace row per run — including a run whose state
         // carries `errors` entries (graceful degradation, not a run
-        // failure). Best-effort: a tracing write failure shouldn't turn a
-        // successful run into a fatal-error event for the user.
+        // failure), and including one that spans two legs because it paused
+        // for clarifying questions. Best-effort: a tracing write failure
+        // shouldn't turn a successful run into a fatal-error event.
         try {
           const { provider, modelId } = getModelConfig();
-          await recordRunTrace({
-            runId: threadId,
+          const trace = {
+            runId,
             startedAt: startedAt.toISOString(),
             endedAt: new Date().toISOString(),
             nodes,
             totalCostUsd: computeTotalCostUsd(nodes, getPricing(provider, modelId)),
-          });
+          };
+          await (resumed ? appendRunTrace(trace) : recordRunTrace(trace));
         } catch (tracingError) {
           console.error("Failed to record run trace", tracingError);
         }
 
-        emit(
-          finalState.result
-            ? { type: "result", result: finalState.result, runId: threadId }
-            : { type: "fatal-error", message: "The run completed without producing a result." },
-        );
+        emit(terminalEvent(runId, finalState));
       } catch (error) {
         emit({
           type: "fatal-error",
@@ -96,6 +164,38 @@ export async function POST(req: Request): Promise<Response> {
   });
 
   return createUIMessageStreamResponse({ stream });
+}
+
+interface InterruptedState {
+  result?: unknown;
+  __interrupt__?: { value?: unknown }[];
+}
+
+/**
+ * LangGraph reports a pause by returning normally with an `__interrupt__`
+ * entry on the state rather than by throwing, so "did this leg finish or is
+ * it waiting on the user?" is a question about the returned value, not about
+ * control flow.
+ */
+function terminalEvent(runId: string, finalState: unknown): StreamEvent {
+  const state = (finalState ?? {}) as InterruptedState;
+
+  const questions = state.__interrupt__?.flatMap((entry) => {
+    const value = entry.value as { questions?: unknown } | undefined;
+    return Array.isArray(value?.questions) ? (value.questions as unknown[]) : [];
+  });
+
+  if (questions && questions.length > 0) {
+    return {
+      type: "clarification-request",
+      runId,
+      questions: questions.filter((question): question is string => typeof question === "string"),
+    };
+  }
+
+  return state.result
+    ? { type: "result", result: state.result as never, runId }
+    : { type: "fatal-error", message: "The run completed without producing a result." };
 }
 
 function jsonError(message: string, status: number): Response {

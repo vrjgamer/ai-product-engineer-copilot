@@ -101,4 +101,57 @@ describe("RunView", () => {
     expect(screen.getByTestId("run-fatal-error").textContent).toContain("checkpointer unreachable");
     expect(screen.queryByTestId("result-view")).toBeNull();
   });
+
+  it("awaiting-clarification: shows the questions alongside the progress so far, and no result", () => {
+    const events: StreamEvent[] = [
+      { type: "node-status", node: "supervisor", status: "completed" },
+      { type: "node-status", node: "clarificationGate", status: "running" },
+    ];
+
+    render(
+      <RunView
+        status="awaiting-clarification"
+        events={events}
+        result={null}
+        questions={["Who is this for?"]}
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("clarification-form").textContent).toContain("Who is this for?");
+    // The pause is part of the same run, so the progress log stays on screen.
+    expect(screen.getByTestId("progress-log")).toBeTruthy();
+    expect(screen.queryByTestId("result-view")).toBeNull();
+    expect(screen.queryByTestId("run-fatal-error")).toBeNull();
+  });
+
+  it("does not list the clarification gate as a pending node on runs that never paused", () => {
+    const events: StreamEvent[] = [{ type: "node-status", node: "prdAgent", status: "running" }];
+
+    render(<RunView status="running" events={events} result={null} />);
+
+    // A permanently "pending" row on the majority of runs would read as
+    // something skipped or stuck.
+    expect(screen.queryByTestId("node-status-clarificationGate")).toBeNull();
+    expect(screen.getByTestId("node-status-prdAgent")).toBeTruthy();
+  });
+
+  it("lists the clarification gate once it has actually reported", () => {
+    const events: StreamEvent[] = [
+      { type: "node-status", node: "clarificationGate", status: "completed" },
+    ];
+
+    render(<RunView status="running" events={events} result={null} />);
+
+    expect(
+      screen.getByTestId("node-status-clarificationGate").getAttribute("data-status"),
+    ).toBe("completed");
+  });
+
+  it("shows no clarification form once the run has finished", () => {
+    render(<RunView status="done" events={[]} result={FULL_RESULT} questions={[]} onAnswer={() => {}} />);
+
+    expect(screen.queryByTestId("clarification-form")).toBeNull();
+    expect(screen.getByTestId("result-view")).toBeTruthy();
+  });
 });
