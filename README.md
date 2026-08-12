@@ -5,12 +5,12 @@ architecture reviews, and roadmaps for PMs and founders — orchestrated with
 LangGraph, calling models through a provider-agnostic layer, and using real
 MCP tool calls against real (self-controlled) data sources.
 
-**This project is being rebuilt.** The previous implementation (a hand-rolled
+**This is the rebuild.** The previous implementation (a hand-rolled
 planner/executor loop with fixture-only tests and a scripted/fake "live
-demo") is being replaced with a genuinely functional product: a real
+demo") has been replaced with a genuinely functional product: a real
 LangGraph state graph, a real (cheap) model actually being called, real MCP
-tool use, and a real deployed demo a visitor can run. The product concept is
-unchanged — only the engineering underneath it is being rebuilt from scratch.
+tool use, and a demo that runs the real thing. The product concept is
+unchanged — only the engineering underneath it was rebuilt from scratch.
 
 **Evaluating this project as a portfolio piece?** Start with
 [`VISION.md`](./VISION.md) — it's written for a recruiter/hiring-manager
@@ -26,7 +26,7 @@ deployment constraints, and what's deliberately deferred — is in
 [`LICENSE`](./LICENSE). It is not open source and may not be copied, reused,
 or redistributed.**
 
-## Stack (rebuild)
+## Stack
 
 TypeScript, Next.js (single app — UI and backend together), LangGraph.js
 (`@langchain/langgraph`), the Vercel AI SDK (`ai` + `@ai-sdk/anthropic` /
@@ -40,21 +40,36 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 
 ## Current status
 
-The rebuild is underway: `ARCHITECTURE.md` and the Technical Design
-Documents under [`docs/tdd/`](./docs/tdd) describe the full target system.
-Implementation proceeds one TDD at a time, test-first, in the order below.
-TDD 0001 (app scaffold, model provider), TDD 0002 (LangGraph core), TDD 0003
-(Neon Postgres, checkpointing, persistent memory), TDD 0004 (`docs-store` and
-`analytics` MCP servers), TDD 0005 (the streaming route handler and the live
-demo UI), TDD 0006 (IP-based rate limiting), TDD 0007 (lightweight per-run
-tracing), and TDD 0008 (CI workflow, mocked-vs-real-API test split) have
-landed — the old `src/` and `web/` directories from the previous
-implementation have been removed. The app is reachable end-to-end (`npm run
-dev`, free-text input → streamed progress → the five deliverables) as of
-TDD 0005, rate-limited (5 runs/hour/IP, configurable) as of TDD 0006, every
-completed run links to a trace view (per-node latency, token usage, MCP
-calls, and cost) as of TDD 0007, and every push/PR runs the mocked suite in
-CI as of TDD 0008.
+**All nine TDDs have landed — the system described in `ARCHITECTURE.md` is
+built.** What that means concretely:
+
+- A visitor types a free-text product description and gets five
+  deliverables — PRD, user stories, architecture review, experiment design,
+  roadmap — from a real LangGraph graph (`lib/graph/`) shaped
+  `supervisor → prdAgent → [userStory, architectureReview, experimentDesign]
+  → roadmap → assembler`, with per-node progress streaming to the browser as
+  it runs (`app/api/generate/route.ts`, `app/page.tsx`).
+- Model calls go through one provider seam (`lib/models/provider.ts`,
+  `MODEL_PROVIDER`/`MODEL_ID`), defaulting to Claude Haiku 4.5.
+- Two MCP servers do real work: `docs-store` runs pgvector search over this
+  repo's own indexed docs, `analytics` pulls real GitHub repo stats with a
+  TTL cache. Both are real MCP JSON-RPC over an in-process transport, and an
+  MCP failure degrades the run's output rather than crashing it.
+- One Neon Postgres database backs checkpointing, embeddings, the stats
+  cache, rate limits, and traces (`migrations/`).
+- Runs are rate-limited (5/hour/IP by default, IPs hashed, never stored raw),
+  and every completed run links to a trace view at `/trace/[runId]` with
+  per-node latency, real token counts, MCP calls, and computed cost.
+- `npm test` (fully mocked, no secrets) plus typecheck and lint run in CI on
+  every push and PR; a separate `npm run test:e2e` exercises the real model,
+  a real Postgres checkpointer, and the real MCP tools manually.
+
+Honest edges, documented rather than glossed: the `memory` table shipped but
+nothing in the request path uses it yet (there's no user identity in a
+single-shot demo); the graph can't stop to ask a clarifying question; and
+nothing automatically scores output quality. `ARCHITECTURE.md` §9 covers the
+last two — why they were cut from v1 and what adding them would touch — and
+the demo page says so in plain language too.
 
 ## Implementation sequence (TDDs)
 
@@ -71,16 +86,26 @@ without needing to re-derive the decisions in `ARCHITECTURE.md`.
 | 6 | [`0006-rate-limiting.md`](./docs/tdd/0006-rate-limiting.md) | IP-based rate limiting with proactive/graceful UX messaging |
 | 7 | [`0007-run-tracing.md`](./docs/tdd/0007-run-tracing.md) | Lightweight per-run observability trace |
 | 8 | [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md) | CI workflow, mocked-vs-real-API test suite split |
-| 9 | [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md) | Recruiter-facing write-up of deliberately deferred features |
+| 9 | [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md) | Docs reconciled against the shipped system; visitor-facing note on what's deliberately deferred |
 
 ## Setup
 
 ```
 npm install
-cp .env.example .env.local   # fill in a model API key and DATABASE_URL
+cp .env.example .env.local   # model API key, DATABASE_URL, RATE_LIMIT_IP_SALT
 npx tsx scripts/migrate.ts   # applies migrations/*.sql and checkpointer.setup()
+npx tsx scripts/index-docs.ts  # optional: builds docs-store's corpus
 npm run dev
 ```
+
+`RATE_LIMIT_IP_SALT` is required — visitor IPs are hashed with it before
+they're written to the `rate_limits` table, and are never stored raw. The
+indexing step is optional but recommended: without it `search_docs` returns
+nothing, so the PRD, user-story, and architecture-review agents run without
+cited context (and degrade with an explicit "unavailable" note if the
+embeddings call itself fails). It needs an embeddings key
+(`EMBEDDING_PROVIDER`, defaults to `google`) separate from the model key —
+see `ARCHITECTURE.md` §3.
 
 `npm test` runs the fully-mocked suite (no API keys/DB needed) and is what
 CI (`.github/workflows/ci.yml`) runs on every push/PR, alongside `npm run

@@ -8,6 +8,7 @@ import type { StreamEvent } from "../lib/graph/streamProtocol";
 import { parseProgressStream } from "../lib/client/parseProgressStream";
 import { RunView, type RunStatus } from "./generate/RunView";
 import { RateLimitNote } from "./RateLimitNote";
+import { WhatsNextNote } from "./WhatsNextNote";
 
 const EXAMPLE_PROMPTS = [
   "A mobile app that helps roommates split and track shared utility bills fairly",
@@ -136,6 +137,8 @@ export default function Home() {
       </div>
 
       <RunView status={status} events={events} result={result} fatalError={fatalError} runId={runId} />
+
+      <WhatsNextNote />
     </main>
   );
 }

@@ -48,12 +48,17 @@ demonstrate judgment, not just familiarity with the tools:
   — not just after — is the actual skill being demonstrated.
 - **Real integrations, deliberately scoped to be safe for a public demo.**
   The two MCP tool servers use real data (a real indexed document corpus with
-  real vector search; real GitHub repository statistics), not synthetic
-  fixtures — but both are scoped to a single, high-uptime external dependency
-  (GitHub) rather than several independent third-party services that could
-  each go down on their own schedule and make the demo look broken to a
-  visitor at the wrong moment. Choosing "real, but bounded" over both "fake"
-  and "arbitrarily real" is itself the judgment call.
+  real pgvector search — this repository's own docs; real GitHub repository
+  statistics, TTL-cached), not synthetic fixtures — but they're scoped to a
+  couple of high-uptime first-party APIs (GitHub, and an embeddings provider)
+  rather than several independent third-party services that could each go
+  down on their own schedule and make the demo look broken to a visitor at
+  the wrong moment. Choosing "real, but bounded" over both "fake" and
+  "arbitrarily real" is itself the judgment call. Worth knowing before you go
+  looking: the MCP servers run in-process over the SDK's in-memory transport,
+  so the protocol boundary is real JSON-RPC but the process boundary isn't —
+  `ARCHITECTURE.md` §3 says so plainly rather than letting "MCP servers"
+  imply more than shipped.
 - **Cost- and infrastructure-consciousness as a design input, not an
   afterthought.** The model choice (the cheapest current Claude model),
   hosting tier (Vercel's free tier), and database choice (one Postgres
@@ -76,16 +81,27 @@ demonstrate judgment, not just familiarity with the tools:
   in `ARCHITECTURE.md` §9 with the reasoning for deferring them, specifically
   so a reviewer sees a deliberate scoping decision instead of a silent gap.
   Knowing what not to build yet, and saying so, is part of what's being
-  shown here.
+  shown here — and the demo page itself carries a plain-language version of
+  both, so a visitor who never opens the repo still gets told.
+- **A documentation pass after the build, not just before it.** The last unit
+  of work in the sequence (TDD 0009) was re-reading `ARCHITECTURE.md` against
+  the shipped code and correcting where the plan had drifted — the MCP
+  servers turned out to need a second external dependency the plan hadn't
+  accounted for, the persistent-memory table shipped without anything using
+  it yet, and the streaming design took a different route than the one
+  originally sketched. Those corrections are written into the document as
+  corrections, next to the original reasoning. A design doc that still
+  matches the code a reviewer is reading is worth more than one that
+  described an intention.
 
 ## How this project is sequenced
 
 Given the volume of decisions involved in a rebuild like this, the actual
-implementation is broken into a series of Technical Design Documents (TDDs)
+implementation was broken into a series of Technical Design Documents (TDDs)
 under [`docs/tdd/`](./docs/tdd) — each one scoped to be picked up and
 implemented standalone, test-first, without needing to re-derive the
-decisions in `ARCHITECTURE.md` from scratch. See the table in
-[`README.md`](./README.md) for the current sequence and status. This mirrors
+decisions in `ARCHITECTURE.md` from scratch. All nine have landed; see the
+table in [`README.md`](./README.md) for what each covered. This mirrors
 how a real engineering team would sequence a rebuild of this scope: a shared
 design record, then independently implementable, reviewable units of work —
 rather than one undifferentiated pile of code landing at once.
@@ -95,7 +111,9 @@ rather than one undifferentiated pile of code landing at once.
 It is a portfolio demo, not a production PM tool. It uses a cheap model
 tuned for cost over maximum output quality; its "real" integrations are
 deliberately narrow (one document corpus, one GitHub-backed metrics source);
-and it does not (yet) support the kind of clarifying-question back-and-forth
-a production copilot would eventually need. Those boundaries are described
-here on purpose — overclaiming what a demo does is a worse signal than
-being precise about its actual scope.
+it does not (yet) support the kind of clarifying-question back-and-forth a
+production copilot would eventually need; and nothing automatically evaluates
+whether the documents it writes are any good — each run gets a trace of what
+it did, not a score for what it produced. Those boundaries are described here
+on purpose — overclaiming what a demo does is a worse signal than being
+precise about its actual scope.
