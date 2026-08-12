@@ -38,6 +38,13 @@ describe("Home page", () => {
     expect(text).toContain("Claude Haiku 4.5");
   });
 
+  it("shows the deferred-capabilities note without needing a run (TDD 0009)", () => {
+    render(<Home />);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("whats-next-note").textContent).toContain("clarifying question");
+  });
+
   it("shows the friendly rate-limit message from a 429 response instead of the generic error state", async () => {
     fetchMock.mockResolvedValue(
       new Response(

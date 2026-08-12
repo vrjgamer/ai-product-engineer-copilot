@@ -166,6 +166,35 @@ body {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+/* ---------- what's-next footer (TDD 0009) ---------- */
+
+.whats-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  max-width: 68ch;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.whats-next p {
+  margin: 0;
+}
+
+.whats-next code {
+  font-size: 0.85em;
+  color: var(--text);
+}
+
+.whats-next-pointer {
+  color: var(--text-faint);
+  font-size: 0.86rem;
+}
+
 /* ---------- composer ---------- */
 
 .composer {
