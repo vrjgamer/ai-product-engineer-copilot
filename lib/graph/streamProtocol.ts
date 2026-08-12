@@ -10,10 +10,17 @@ import type { AssembledResult } from "./state";
  * `result`'s `runId` (TDD 0007) is the same ID used as the checkpointer's
  * thread_id and the trace's `run_id` — it's what the UI's "view trace" link
  * points at.
+ *
+ * A run can also end a leg without a result: `clarification-request` (TDD
+ * 0010) means the graph paused at `clarificationGate` and is waiting on
+ * answers. Its `runId` is the thread the client posts those answers back
+ * against, which is why the ID travels on this event too rather than only on
+ * `result`.
  */
 export type StreamEvent =
   | ProgressEvent
   | { type: "result"; result: AssembledResult; runId: string }
+  | { type: "clarification-request"; runId: string; questions: string[] }
   | { type: "fatal-error"; message: string };
 
 /**

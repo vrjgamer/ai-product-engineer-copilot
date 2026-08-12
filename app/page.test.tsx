@@ -42,7 +42,7 @@ describe("Home page", () => {
     render(<Home />);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByTestId("whats-next-note").textContent).toContain("clarifying question");
+    expect(screen.getByTestId("whats-next-note").textContent).toMatch(/scor|grad|eval/i);
   });
 
   it("shows the friendly rate-limit message from a 429 response instead of the generic error state", async () => {
@@ -92,6 +92,115 @@ describe("Home page", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("view-trace-link").getAttribute("href")).toBe("/trace/run-abc");
+    });
+  });
+
+  /** TDD 0010: the run pauses, the page asks, the answers go back on the same runId. */
+  describe("clarifying questions", () => {
+    const RESULT = {
+      prd: { content: "PRD content" },
+      userStories: { content: "User stories content" },
+      architectureReview: { content: "Architecture review content" },
+      experimentDesign: { content: "Experiment design content" },
+      roadmap: { content: "Roadmap content" },
+      errors: [],
+    };
+
+    function sseResponse(events: StreamEvent[]): Response {
+      return new Response(sseBody(events), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+
+    async function startPausedRun() {
+      fetchMock.mockResolvedValueOnce(
+        sseResponse([
+          { type: "node-status", node: "supervisor", status: "completed" },
+          { type: "clarification-request", runId: "run-abc", questions: ["Who is this for?"] },
+        ]),
+      );
+
+      render(<Home />);
+      fireEvent.change(screen.getByPlaceholderText("Describe the product or feature you want a plan for"), {
+        target: { value: "an app" },
+      });
+      fireEvent.click(screen.getByText("Generate plan"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("clarification-form")).toBeTruthy();
+      });
+    }
+
+    it("shows the questions instead of a result when the run pauses", async () => {
+      await startPausedRun();
+
+      expect(screen.getByTestId("clarification-form").textContent).toContain("Who is this for?");
+      expect(screen.queryByTestId("result-view")).toBeNull();
+      // A pause is not an error.
+      expect(screen.queryByTestId("run-fatal-error")).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("posts the answers back against the paused run's id and renders the completed result", async () => {
+      await startPausedRun();
+      fetchMock.mockResolvedValueOnce(
+        sseResponse([{ type: "result", result: RESULT, runId: "run-abc" }]),
+      );
+
+      const input = screen.getByTestId("clarification-form").querySelector("input")!;
+      fireEvent.change(input, { target: { value: "Freelance designers" } });
+      fireEvent.submit(screen.getByTestId("clarification-form"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("result-view")).toBeTruthy();
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const secondCall = fetchMock.mock.calls[1] as [string, { body: string }];
+      expect(JSON.parse(secondCall[1].body)).toEqual({
+        runId: "run-abc",
+        answers: ["Freelance designers"],
+      });
+      expect(screen.getByTestId("view-trace-link").getAttribute("href")).toBe("/trace/run-abc");
+      expect(screen.queryByTestId("clarification-form")).toBeNull();
+    });
+
+    it("keeps the pre-pause progress on screen through the resume", async () => {
+      await startPausedRun();
+      fetchMock.mockResolvedValueOnce(
+        sseResponse([
+          { type: "node-status", node: "prdAgent", status: "completed" },
+          { type: "result", result: RESULT, runId: "run-abc" },
+        ]),
+      );
+
+      fireEvent.click(screen.getByTestId("clarification-skip"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("result-view")).toBeTruthy();
+      });
+
+      // Both legs are one run — clearing the earlier events would make the
+      // graph look like it restarted from scratch.
+      expect(screen.getByTestId("node-status-supervisor").getAttribute("data-status")).toBe("completed");
+      expect(screen.getByTestId("node-status-prdAgent").getAttribute("data-status")).toBe("completed");
+    });
+
+    it("surfaces a failed resume as the run's error state", async () => {
+      await startPausedRun();
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "That run isn't waiting for answers — start a new one." }), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      fireEvent.click(screen.getByTestId("clarification-skip"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("run-fatal-error")).toBeTruthy();
+      });
     });
   });
 });

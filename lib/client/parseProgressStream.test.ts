@@ -71,4 +71,17 @@ describe("parseProgressStream", () => {
 
     expect(events).toEqual([]);
   });
+
+  it("yields a clarification-request as an ordinary event (TDD 0010)", async () => {
+    const paused = {
+      type: "clarification-request",
+      runId: "run-abc",
+      questions: ["Who is this for?"],
+    };
+    const body = streamFromChunks([sseLine({ type: "data-progress", data: paused })]);
+
+    // A leg that ends by asking is streamed on the same channel as any other
+    // event — the parser has no notion of terminal events.
+    expect(await collect(parseProgressStream(body))).toEqual([paused]);
+  });
 });

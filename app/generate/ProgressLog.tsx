@@ -36,7 +36,15 @@ export function ProgressLog({ events, live }: ProgressLogProps) {
         </p>
       ) : null}
       <ul className="node-list" data-testid="node-status-list">
-        {NODE_ORDER.map((node) => {
+        {/*
+          `clarificationGate` (TDD 0010) only runs on the minority of runs the
+          supervisor decides to pause, so it's listed only once it has
+          actually reported — a permanently "pending" row on every
+          unclarified run would read as something that got skipped or stuck.
+        */}
+        {NODE_ORDER.filter(
+          (node) => node !== "clarificationGate" || statusByNode.has(node),
+        ).map((node) => {
           const status = statusByNode.get(node) ?? "pending";
           return (
             <li className="node-row" key={node} data-testid={`node-status-${node}`} data-status={status}>

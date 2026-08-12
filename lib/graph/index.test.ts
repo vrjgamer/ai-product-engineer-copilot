@@ -41,6 +41,7 @@ const FIXTURE_REPO_STATS = {
 // several nodes' prompts (e.g. roadmapAgent's prompt mentions all four
 // upstream deliverables by name).
 const NODE_BY_ROLE: Record<string, string> = {
+  "product discovery lead": "supervisor",
   "product manager": "prdAgent",
   "product analyst": "userStoryAgent",
   "software architect": "architectureReviewAgent",
@@ -49,6 +50,11 @@ const NODE_BY_ROLE: Record<string, string> = {
 };
 
 const CONTENT_BY_NODE: Record<string, string> = {
+  // TDD 0010: the supervisor's triage call answers with a JSON array of
+  // clarifying questions. Empty by default — these cases all cover the
+  // unclarified path, which is the one TDD 0002 shaped. The clarified path
+  // has its own suite (lib/graph/clarification.test.ts).
+  supervisor: "[]",
   prdAgent: "PRD content",
   userStoryAgent: "User stories content",
   architectureReviewAgent: "Architecture review content",
@@ -90,7 +96,11 @@ describe("buildGraph", () => {
       (name) => order.indexOf(name),
     );
 
-    expect(prdIndex).toBe(0);
+    // The supervisor's triage call (TDD 0010) is the run's first model call;
+    // prdAgent is the first *deliverable-producing* one, still ahead of the
+    // whole fan-out.
+    expect(order[0]).toBe("supervisor");
+    expect(prdIndex).toBe(1);
     for (const index of fanOutIndices) {
       expect(index).toBeGreaterThan(prdIndex);
     }

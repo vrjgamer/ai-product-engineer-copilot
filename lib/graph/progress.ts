@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { isGraphInterrupt } from "@langchain/langgraph";
+
 import type { GraphState, GraphStateUpdate } from "./state";
 
 export type GraphNodeName =
   | "supervisor"
+  | "clarificationGate"
   | "prdAgent"
   | "userStoryAgent"
   | "architectureReviewAgent"
@@ -85,7 +88,11 @@ export function withNodeProgress(
         node,
         status: "running",
         ...(node === "supervisor"
-          ? { message: "Routing to the PRD agent first — every deliverable depends on it." }
+          ? {
+              message:
+                "Checking whether the request is specific enough to plan against, then routing " +
+                "to the PRD agent — every other deliverable depends on it.",
+            }
           : {}),
       });
       try {
@@ -93,6 +100,13 @@ export function withNodeProgress(
         outer.emit({ type: "node-status", node, status: "completed" });
         return update;
       } catch (error) {
+        // TDD 0010: `clarificationGate` signals "I'm asking the user
+        // something" by throwing `GraphInterrupt`. That's control flow, not
+        // failure — reporting it as a node error would paint a red error row
+        // in the progress log at the exact moment the UI is showing the
+        // question. Re-thrown untouched so LangGraph still parks the run.
+        if (isGraphInterrupt(error)) throw error;
+
         outer.emit({
           type: "node-status",
           node,

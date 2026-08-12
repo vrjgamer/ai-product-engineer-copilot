@@ -22,14 +22,43 @@ export default function Home() {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [result, setResult] = useState<AssembledResult | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<string[]>([]);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
-  async function run(requestText: string) {
+  const busy = status === "running";
+
+  /**
+   * Consumes one leg of a run's SSE stream (TDD 0005), which can end three
+   * ways: a result, a fatal error, or — since TDD 0010 — a pause with
+   * questions, which leaves the accumulated progress events on screen and
+   * hands off to `answer()` below.
+   */
+  async function consume(body: ReadableStream<Uint8Array>) {
+    let paused = false;
+
+    for await (const event of parseProgressStream(body)) {
+      if (event.type === "result") {
+        setResult(event.result);
+        setRunId(event.runId);
+      } else if (event.type === "clarification-request") {
+        paused = true;
+        setRunId(event.runId);
+        setQuestions(event.questions);
+      } else if (event.type === "fatal-error") {
+        setFatalError(event.message);
+      } else {
+        setEvents((prev) => [...prev, event]);
+      }
+    }
+
+    setStatus((current) =>
+      current !== "running" ? current : paused ? "awaiting-clarification" : "done",
+    );
+  }
+
+  async function post(payload: Record<string, unknown>) {
     setStatus("running");
-    setEvents([]);
-    setResult(null);
-    setRunId(null);
     setFatalError(null);
     setRateLimitMessage(null);
 
@@ -37,7 +66,7 @@ export default function Home() {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: requestText }),
+        body: JSON.stringify(payload),
       });
 
       if (response.status === 429) {
@@ -57,33 +86,41 @@ export default function Home() {
         throw new Error(`Request failed (${response.status})`);
       }
 
-      for await (const event of parseProgressStream(response.body)) {
-        if (event.type === "result") {
-          setResult(event.result);
-          setRunId(event.runId);
-        } else if (event.type === "fatal-error") {
-          setFatalError(event.message);
-        } else {
-          setEvents((prev) => [...prev, event]);
-        }
-      }
-
-      setStatus((current) => (current === "running" ? "done" : current));
+      await consume(response.body);
     } catch (error) {
       setFatalError(error instanceof Error ? error.message : String(error));
       setStatus("error");
     }
   }
 
+  function run(requestText: string) {
+    setEvents([]);
+    setResult(null);
+    setRunId(null);
+    setQuestions([]);
+    void post({ input: requestText });
+  }
+
+  /**
+   * Resumes the paused run. Deliberately keeps `events` — the supervisor's
+   * decision and everything before the pause are part of the same run, and
+   * clearing them would make the graph look like it restarted.
+   */
+  function answer(answers: string[]) {
+    if (!runId) return;
+    setQuestions([]);
+    void post({ runId, answers });
+  }
+
   function handleSubmit(formEvent: FormEvent) {
     formEvent.preventDefault();
-    if (input.trim() && status !== "running") void run(input.trim());
+    if (input.trim() && !busy) run(input.trim());
   }
 
   function handleExampleClick(prompt: string) {
-    if (status === "running") return;
+    if (busy) return;
     setInput(prompt);
-    void run(prompt);
+    run(prompt);
   }
 
   return (
@@ -111,12 +148,8 @@ export default function Home() {
           rows={4}
         />
         <div className="composer-actions">
-          <button
-            className="btn-primary"
-            type="submit"
-            disabled={status === "running" || !input.trim()}
-          >
-            {status === "running" ? "Generating…" : "Generate plan"}
+          <button className="btn-primary" type="submit" disabled={busy || !input.trim()}>
+            {busy ? "Generating…" : "Generate plan"}
           </button>
         </div>
       </form>
@@ -128,7 +161,7 @@ export default function Home() {
             key={prompt}
             className="chip"
             type="button"
-            disabled={status === "running"}
+            disabled={busy}
             onClick={() => handleExampleClick(prompt)}
           >
             {prompt}
@@ -136,7 +169,15 @@ export default function Home() {
         ))}
       </div>
 
-      <RunView status={status} events={events} result={result} fatalError={fatalError} runId={runId} />
+      <RunView
+        status={status}
+        events={events}
+        result={result}
+        fatalError={fatalError}
+        runId={runId}
+        questions={questions}
+        onAnswer={answer}
+      />
 
       <WhatsNextNote />
     </main>

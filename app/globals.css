@@ -602,3 +602,65 @@ a:focus-visible {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
 }
+
+/* ---------- clarification form (TDD 0010) ---------- */
+
+.clarification {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem;
+  border-color: var(--border-strong);
+}
+
+.clarification-lede {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.clarification-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.clarification-question {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.clarification-field input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.clarification-field input::placeholder {
+  color: var(--text-faint);
+}
+
+.clarification-field input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.clarification-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.6rem;
+}

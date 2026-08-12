@@ -36,6 +36,7 @@ const FIXTURE_REPO_STATS = {
 // Same role-substring mapping as lib/graph/index.test.ts — each node's system
 // prompt starts with a unique "You are a <role>" phrase.
 const NODE_BY_ROLE: Record<string, string> = {
+  "product discovery lead": "supervisor",
   "product manager": "prdAgent",
   "product analyst": "userStoryAgent",
   "software architect": "architectureReviewAgent",
@@ -44,6 +45,9 @@ const NODE_BY_ROLE: Record<string, string> = {
 };
 
 const USAGE_BY_NODE: Record<string, { inputTokens: number; outputTokens: number }> = {
+  // TDD 0010: the supervisor now makes a real (triage) model call, so it has
+  // token counts like any other model-calling node.
+  supervisor: { inputTokens: 20, outputTokens: 5 },
   prdAgent: { inputTokens: 100, outputTokens: 50 },
   userStoryAgent: { inputTokens: 60, outputTokens: 30 },
   architectureReviewAgent: { inputTokens: 70, outputTokens: 35 },
@@ -88,9 +92,9 @@ describe("run tracing through a real graph run", () => {
       expect(trace.latencyMs).toBeGreaterThanOrEqual(0);
     }
 
-    // supervisor and assembler make no model call.
-    const supervisorTrace = nodes.find((n) => n.node === "supervisor")!;
-    expect(supervisorTrace.inputTokens).toBeUndefined();
+    // assembler is the one node that still makes no model call.
+    const assemblerTrace = nodes.find((n) => n.node === "assembler")!;
+    expect(assemblerTrace.inputTokens).toBeUndefined();
   });
 
   it("still produces a complete trace (every node represented) when a node's model call throws", async () => {

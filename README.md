@@ -40,7 +40,7 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 
 ## Current status
 
-**All nine TDDs have landed — the system described in `ARCHITECTURE.md` is
+**All ten TDDs have landed — the system described in `ARCHITECTURE.md` is
 built.** What that means concretely:
 
 - A visitor types a free-text product description and gets five
@@ -49,6 +49,10 @@ built.** What that means concretely:
   `supervisor → prdAgent → [userStory, architectureReview, experimentDesign]
   → roadmap → assembler`, with per-node progress streaming to the browser as
   it runs (`app/api/generate/route.ts`, `app/page.tsx`).
+- If the description is too vague to plan against, the supervisor routes to a
+  `clarificationGate` node that pauses the run at a durable checkpoint, asks
+  up to three questions, and continues with the answers folded into the PRD
+  (TDD 0010). Answering is optional — skipping runs it on stated assumptions.
 - Model calls go through one provider seam (`lib/models/provider.ts`,
   `MODEL_PROVIDER`/`MODEL_ID`), defaulting to Claude Haiku 4.5.
 - Two MCP servers do real work: `docs-store` runs pgvector search over this
@@ -62,14 +66,16 @@ built.** What that means concretely:
   per-node latency, real token counts, MCP calls, and computed cost.
 - `npm test` (fully mocked, no secrets) plus typecheck and lint run in CI on
   every push and PR; a separate `npm run test:e2e` exercises the real model,
-  a real Postgres checkpointer, and the real MCP tools manually.
+  a real Postgres checkpointer, a real interrupt/resume round-trip, and the
+  real MCP tools manually.
 
 Honest edges, documented rather than glossed: the `memory` table shipped but
-nothing in the request path uses it yet (there's no user identity in a
-single-shot demo); the graph can't stop to ask a clarifying question; and
-nothing automatically scores output quality. `ARCHITECTURE.md` §9 covers the
-last two — why they were cut from v1 and what adding them would touch — and
-the demo page says so in plain language too.
+nothing in the request path uses it yet (there's still no user identity — an
+answer to a clarifying question belongs to a run, not to a person); the
+clarification pause is one question round, not a conversation; and nothing
+automatically scores output quality. `ARCHITECTURE.md` §9 covers the eval
+layer — why it was cut from v1 and what adding it would touch — and the demo
+page says so in plain language too.
 
 ## Implementation sequence (TDDs)
 
@@ -87,6 +93,7 @@ without needing to re-derive the decisions in `ARCHITECTURE.md`.
 | 7 | [`0007-run-tracing.md`](./docs/tdd/0007-run-tracing.md) | Lightweight per-run observability trace |
 | 8 | [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md) | CI workflow, mocked-vs-real-API test suite split |
 | 9 | [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md) | Docs reconciled against the shipped system; visitor-facing note on what's deliberately deferred |
+| 10 | [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md) | Human-in-the-loop: the supervisor triages vague requests, the graph pauses at `interrupt()`, the route resumes it with the answers |
 
 ## Setup
 
@@ -122,7 +129,11 @@ and the real MCP servers, in order:
    LangGraph graph against a real Postgres checkpointer, asserting the
    resumed run continues from the saved state instead of restarting (TDD
    0003).
-3. `scripts/mcp-roundtrip.ts` — calls the real `get_repo_stats` and
+3. `scripts/clarification-roundtrip.ts` — sends a deliberately vague request
+   so the real triage model parks the run at `interrupt()`, then resumes it
+   through a separately-constructed checkpointer and asserts the answer
+   reached the PRD (TDD 0010).
+4. `scripts/mcp-roundtrip.ts` — calls the real `get_repo_stats` and
    `search_docs` MCP tools against real GitHub data and a real indexed
    corpus (TDD 0004).
 

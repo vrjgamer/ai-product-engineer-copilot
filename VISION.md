@@ -77,12 +77,16 @@ demonstrate judgment, not just familiarity with the tools:
   left out.** Two capabilities were designed against and then deliberately
   cut from v1: clarifying-question support (via LangGraph's interrupt/resume
   mechanism) and the previous version's full evaluation/observability rigor
-  layer (golden-set regression testing, LLM-as-judge). Both are documented
+  layer (golden-set regression testing, LLM-as-judge). Both were documented
   in `ARCHITECTURE.md` §9 with the reasoning for deferring them, specifically
   so a reviewer sees a deliberate scoping decision instead of a silent gap.
-  Knowing what not to build yet, and saying so, is part of what's being
-  shown here — and the demo page itself carries a plain-language version of
-  both, so a visitor who never opens the repo still gets told.
+  The first has since been built (TDD 0010) — and the more useful thing to
+  read there is that §9 had predicted the work would be additive rather than
+  a redesign, and recorded exactly which files it would touch; when the
+  session that built it came along, that prediction held. A deferral written
+  down well enough to be picked up later is the point. The eval layer is
+  still deferred, and the demo page carries a plain-language version of
+  what's missing, so a visitor who never opens the repo still gets told.
 - **A documentation pass after the build, not just before it.** The last unit
   of work in the sequence (TDD 0009) was re-reading `ARCHITECTURE.md` against
   the shipped code and correcting where the plan had drifted — the MCP
@@ -100,7 +104,7 @@ Given the volume of decisions involved in a rebuild like this, the actual
 implementation was broken into a series of Technical Design Documents (TDDs)
 under [`docs/tdd/`](./docs/tdd) — each one scoped to be picked up and
 implemented standalone, test-first, without needing to re-derive the
-decisions in `ARCHITECTURE.md` from scratch. All nine have landed; see the
+decisions in `ARCHITECTURE.md` from scratch. All ten have landed; see the
 table in [`README.md`](./README.md) for what each covered. This mirrors
 how a real engineering team would sequence a rebuild of this scope: a shared
 design record, then independently implementable, reviewable units of work —
