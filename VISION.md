@@ -121,7 +121,7 @@ Given the volume of decisions involved in a rebuild like this, the actual
 implementation was broken into a series of Technical Design Documents (TDDs)
 under [`docs/tdd/`](./docs/tdd) — each one scoped to be picked up and
 implemented standalone, test-first, without needing to re-derive the
-decisions in `ARCHITECTURE.md` from scratch. All eleven have landed; see the
+decisions in `ARCHITECTURE.md` from scratch. All twelve have landed; see the
 table in [`README.md`](./README.md) for what each covered. This mirrors
 how a real engineering team would sequence a rebuild of this scope: a shared
 design record, then independently implementable, reviewable units of work —

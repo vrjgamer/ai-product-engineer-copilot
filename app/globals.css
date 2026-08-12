@@ -626,6 +626,32 @@ a:focus-visible {
   border-radius: var(--radius);
 }
 
+/* ---------- saved run permalink (TDD 0012) ---------- */
+
+.run-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.stored-run {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stored-run-request {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.stored-run-meta {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
 /* ---------- clarification form (TDD 0010) ---------- */
 
 .clarification {

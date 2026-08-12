@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-const getState = vi.fn((..._args: unknown[]) => Promise.resolve({ tasks: [] as { interrupts: unknown[] }[] }));
+/** `values` is optional here because TDD 0012's resume path reads the original request off the snapshot, and has to cope with a snapshot that doesn't carry one. */
+type StateSnapshot = { tasks: { interrupts: unknown[] }[]; values?: { request?: unknown } };
+const getState = vi.fn((..._args: unknown[]): Promise<StateSnapshot> => Promise.resolve({ tasks: [] }));
 const buildGraph = vi.fn((..._args: unknown[]) => ({ invoke, getState }));
 const getCheckpointer = vi.fn((..._args: unknown[]) => ({}) as never);
 const checkRateLimit = vi.fn(
@@ -9,6 +11,7 @@ const checkRateLimit = vi.fn(
 );
 const recordRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
 const appendRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
+const recordRunResult = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("../../../lib/graph", () => ({
   buildGraph: (...args: unknown[]) => buildGraph(...args),
@@ -31,8 +34,15 @@ vi.mock("../../../lib/tracing/record", () => ({
   appendRunTrace: (...args: unknown[]) => appendRunTrace(...args),
 }));
 
+// TDD 0012: the result row is written on the same best-effort discipline as
+// the trace row above, so it's mocked here for the same reason.
+vi.mock("../../../lib/results/record", () => ({
+  recordRunResult: (...args: unknown[]) => recordRunResult(...args),
+}));
+
 import type { StreamEvent } from "../../../lib/graph/streamProtocol";
 import type { RateLimitResult } from "../../../lib/rate-limit/check";
+import type { RunResult } from "../../../lib/results/record";
 import type { RunTrace } from "../../../lib/tracing/record";
 import { POST } from "./route";
 
@@ -80,6 +90,8 @@ describe("POST /api/generate", () => {
     recordRunTrace.mockResolvedValue(undefined);
     appendRunTrace.mockReset();
     appendRunTrace.mockResolvedValue(undefined);
+    recordRunResult.mockReset();
+    recordRunResult.mockResolvedValue(undefined);
     getState.mockReset();
     getState.mockResolvedValue({ tasks: [] });
   });
@@ -121,6 +133,45 @@ describe("POST /api/generate", () => {
 
     const result = events.find((event) => event.type === "result");
     expect(result).toEqual({ type: "result", result: RESULT, runId: expect.any(String) });
+  });
+
+  it("stores the run's result (TDD 0012) keyed by the same run id, with the request that produced it", async () => {
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+    const events = await drainStreamEvents(response);
+
+    const result = events.find((event) => event.type === "result") as Extract<
+      StreamEvent,
+      { type: "result" }
+    >;
+    expect(recordRunResult).toHaveBeenCalledTimes(1);
+    const [stored] = recordRunResult.mock.calls[0] as [RunResult];
+    expect(stored.runId).toBe(result.runId);
+    expect(stored.request).toBe("Build a todo app");
+    expect(stored.result).toEqual(RESULT);
+    expect(new Date(stored.createdAt).toISOString()).toBe(stored.createdAt);
+  });
+
+  it("still streams the result even when storing it fails", async () => {
+    // The regression this guards: a persistence bug being upgraded into a
+    // failed run. Best-effort, exactly as TDD 0007's trace write is.
+    recordRunResult.mockRejectedValue(new Error("DB unreachable"));
+
+    const events = await drainStreamEvents(await POST(postRequest({ input: "Build a todo app" })));
+
+    expect(events.find((event) => event.type === "result")).toEqual({
+      type: "result",
+      result: RESULT,
+      runId: expect.any(String),
+    });
+    expect(events.find((event) => event.type === "fatal-error")).toBeUndefined();
+  });
+
+  it("stores nothing when the run itself fails", async () => {
+    invoke.mockRejectedValue(new Error("checkpointer unreachable"));
+
+    await drainStreamEvents(await POST(postRequest({ input: "Build a todo app" })));
+
+    expect(recordRunResult).not.toHaveBeenCalled();
   });
 
   it("rejects a request with no input without invoking the graph", async () => {
@@ -240,8 +291,13 @@ describe("POST /api/generate — clarifying questions", () => {
     recordRunTrace.mockResolvedValue(undefined);
     appendRunTrace.mockReset();
     appendRunTrace.mockResolvedValue(undefined);
+    recordRunResult.mockReset();
+    recordRunResult.mockResolvedValue(undefined);
     getState.mockReset();
-    getState.mockResolvedValue({ tasks: [{ interrupts: [{ value: { questions: QUESTIONS } }] }] });
+    getState.mockResolvedValue({
+      tasks: [{ interrupts: [{ value: { questions: QUESTIONS } }] }],
+      values: { request: "an app" },
+    });
   });
 
   async function startPausedRun(): Promise<string> {
@@ -292,6 +348,27 @@ describe("POST /api/generate — clarifying questions", () => {
     expect(recordRunTrace).not.toHaveBeenCalled();
     const [trace] = appendRunTrace.mock.calls[0] as [RunTrace];
     expect(trace.runId).toBe("run-1");
+  });
+
+  it("stores no result for a leg that paused instead of finishing", async () => {
+    invoke.mockResolvedValue(PAUSED_STATE);
+
+    await drainStreamEvents(await POST(postRequest({ input: "an app" })));
+
+    // A row of nulls would make "unfinished" and "failed" the same state.
+    expect(recordRunResult).not.toHaveBeenCalled();
+  });
+
+  it("stores the resumed run's result under the original request, taken from the checkpointed state", async () => {
+    await drainStreamEvents(await POST(postRequest({ runId: "run-1", answers: ["Designers"] })));
+
+    expect(recordRunResult).toHaveBeenCalledTimes(1);
+    const [stored] = recordRunResult.mock.calls[0] as [RunResult];
+    expect(stored.runId).toBe("run-1");
+    // The resume body carries only answers, so the request has to come from
+    // the snapshot the paused-check already fetched.
+    expect(stored.request).toBe("an app");
+    expect(stored.result).toEqual(RESULT);
   });
 
   it("does not spend a rate-limit unit on the resume — a paused run is one run", async () => {

@@ -33,6 +33,14 @@ const FIXTURE_TRACE: RunTrace = {
 };
 
 describe("TraceView", () => {
+  it("links back to the plan the run produced (TDD 0012)", () => {
+    render(<TraceView trace={FIXTURE_TRACE} />);
+
+    expect(screen.getByTestId("view-plan-link").getAttribute("href")).toBe(
+      `/run/${FIXTURE_TRACE.runId}`,
+    );
+  });
+
   it("renders the run's id, timestamps, and total cost", () => {
     render(<TraceView trace={FIXTURE_TRACE} />);
 

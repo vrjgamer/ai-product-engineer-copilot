@@ -263,6 +263,17 @@ chunk per event (`lib/graph/streamProtocol.ts`), parsed on the client by
 `lib/client/parseProgressStream.ts`. The final assembled result arrives as the last event
 on that same stream, carrying the run ID §7's trace link needs.
 
+**What synchronous streaming does *not* imply** (TDD 0012): that the output is gone when
+the stream is. Through 0011 it was — the assembled result lived only in the page's React
+state, so a refresh destroyed a run that took minutes to produce and 20% of the visitor's
+hourly budget (§6) to buy, while `/trace/[runId]` went on serving that same run's metrics
+indefinitely. The system durably remembered what a run cost and forgot what it produced.
+That was an accident of sequencing rather than a decision, and 0012 closed it: a completed
+run's deliverables are written to `run_results` (`lib/results/record.ts`) keyed by the same
+`run_id`, and re-render at `/run/[runId]`. The write is best-effort on the same terms as
+§7's trace write — a storage failure is logged, never turned into a failed run — and a leg
+that paused for clarifying questions stores nothing, because it has no result yet.
+
 **The one exception to "entirely synchronously"** (TDD 0010): a run that pauses for
 clarifying questions is two requests, not one. The first ends its stream with a
 `clarification-request` event instead of a `result`; the browser posts the answers back to
@@ -347,6 +358,14 @@ unrecognized `MODEL_ID` instead of throwing. The "view trace" link on a complete
 points at `/trace/[runId]`. Two deliberate properties: a run that degraded (§3) still gets
 a complete trace, and a failure to *write* the trace is logged but never turned into a
 user-visible run failure.
+
+TDD 0012 added a third per-run table beside these two, `run_results` (§5), and deliberately
+did *not* give it the FK to `run_traces` that `run_evals` has. The eval harness controls
+both of its rows and writes them in order, so an eval without a trace is a bug worth
+rejecting. But a trace row is only written best-effort, so an FK on the results table would
+let a transient failure writing *metrics* silently destroy the *deliverables* — backwards,
+given which of the two a visitor waited five minutes for. The cost of that choice is that
+deleting a trace can leave a result behind; the permalink renders fine without one.
 
 The full eval/rigor concept was not dropped — it was named explicitly in §9 as deferred
 work, with the reasoning stated, rather than silently disappearing the way it would if this
@@ -496,6 +515,9 @@ just ran the demo shouldn't have to open this document to find that out.
 | Eval ground truth | Reference "correct" documents to score similarity against | Measures conformity to one author's taste; `mustMention` checks plus a rubric measure whether the output is usable |
 | Conversation shape | Clarifying-question support (interrupt/resume) in v1 | Changed single-shot into multi-turn — real scope, deferred to v2 and since built by TDD 0010 |
 | Clarification shape | A full chat loop (ask, answer, re-ask, refine) | One pause before the PRD covers the ambiguity that actually breaks a plan; a chat is a different product |
+| Stored results | A foreign key to `run_traces`, as `run_evals` has | Traces are written best-effort, so an FK would let a failed metrics write destroy the deliverables (TDD 0012) |
+| Stored results | A "my runs" listing page | Needs an identity to scope by, which this demo deliberately doesn't have — hashed IPs are not a user (§6) |
+| Stored results | Auth on the run permalink | No auth exists to build on; the unguessable server-minted UUID is the capability, and the UI says so rather than implying privacy |
 
 ---
 
@@ -504,9 +526,10 @@ just ran the demo shouldn't have to open this document to find that out.
 This document describes the target architecture. The actual build was sequenced as a
 series of Technical Design Documents under [`docs/tdd/`](./docs/tdd), each scoped to be
 implementable standalone, test-first, by a future session without re-deriving the
-decisions above. All eleven have landed; each one's "as built" notes are folded into the
-sections above. 0001-0008 built the system, 0009 reconciled these documents with it, and
-0010 and 0011 built the two capabilities 0009 had recorded as deferred.
+decisions above. All twelve have landed; each one's "as built" notes are folded into the
+sections above. 0001-0008 built the system, 0009 reconciled these documents with it,
+0010 and 0011 built the two capabilities 0009 had recorded as deferred, and 0012 fixed the
+one gap none of them had noticed: a completed run's output didn't outlive its browser tab.
 
 1. [`0001-app-scaffold-and-model-provider.md`](./docs/tdd/0001-app-scaffold-and-model-provider.md)
 2. [`0002-langgraph-core.md`](./docs/tdd/0002-langgraph-core.md)
@@ -519,3 +542,4 @@ sections above. 0001-0008 built the system, 0009 reconciled these documents with
 9. [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md)
 10. [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md)
 11. [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md)
+12. [`0012-durable-results.md`](./docs/tdd/0012-durable-results.md)

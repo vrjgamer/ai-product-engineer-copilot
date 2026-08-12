@@ -52,9 +52,17 @@ export function RunView({ status, events, result, fatalError, runId, questions =
       {status === "done" && result ? (
         <>
           {runId ? (
-            <a className="trace-link" data-testid="view-trace-link" href={`/trace/${runId}`}>
-              View trace →
-            </a>
+            <div className="run-links">
+              {/* TDD 0012: worded as a share link on purpose — the URL is the
+                  only thing gating access, so a visitor copying it should
+                  know that's what they're copying. */}
+              <a className="trace-link" data-testid="run-permalink" href={`/run/${runId}`}>
+                Save or share this plan →
+              </a>
+              <a className="trace-link" data-testid="view-trace-link" href={`/trace/${runId}`}>
+                View trace →
+              </a>
+            </div>
           ) : null}
           <ResultView result={result} />
         </>

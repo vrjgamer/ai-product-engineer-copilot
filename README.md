@@ -40,7 +40,7 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 
 ## Current status
 
-**All eleven TDDs have landed — the system described in `ARCHITECTURE.md` is
+**All twelve TDDs have landed — the system described in `ARCHITECTURE.md` is
 built.** What that means concretely:
 
 - A visitor types a free-text product description and gets five
@@ -68,6 +68,9 @@ built.** What that means concretely:
   every push and PR; a separate `npm run test:e2e` exercises the real model,
   a real Postgres checkpointer, a real interrupt/resume round-trip, and the
   real MCP tools manually.
+- A completed run is saved and gets a shareable permalink at `/run/[runId]`
+  (TDD 0012), so closing the tab no longer destroys a plan that took minutes
+  and a fifth of an hourly rate-limit budget to produce.
 - `npm run eval` is the golden-set regression harness (TDD 0011): it runs the
   real graph over `eval/golden/cases.json`, has a second model grade each
   deliverable against a rubric and a four-tag failure taxonomy, checks its
@@ -81,7 +84,12 @@ clarification pause is one question round, not a conversation; and quality
 scoring is a harness you run by hand against fixed cases, not something that
 grades live traffic — judging every visitor run would roughly double what the
 demo costs to operate. `ARCHITECTURE.md` §9 covers that trade, and the demo
-page says it in plain language too.
+page says it in plain language too. Saved runs (TDD 0012) add two more: the
+permalink's only access control is the unguessability of its server-minted
+UUID — anyone with the link can read the run, which is why the UI calls it a
+share link rather than implying privacy — and stored runs currently have no
+expiry, so a real deployment would want a retention policy this demo doesn't
+have. That table is also the first one holding visitor-typed text.
 
 ## Implementation sequence (TDDs)
 
@@ -101,6 +109,7 @@ without needing to re-derive the decisions in `ARCHITECTURE.md`.
 | 9 | [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md) | Docs reconciled against the shipped system; visitor-facing note on what's deliberately deferred |
 | 10 | [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md) | Human-in-the-loop: the supervisor triages vague requests, the graph pauses at `interrupt()`, the route resumes it with the answers |
 | 11 | [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md) | Golden-set eval harness: calibrated LLM-as-judge, four-tag failure taxonomy, deterministic checks, regression gate |
+| 12 | [`0012-durable-results.md`](./docs/tdd/0012-durable-results.md) | Completed runs persisted to `run_results` and served at a shareable `/run/[runId]` permalink, so output outlives the tab |
 
 ## Setup
 
