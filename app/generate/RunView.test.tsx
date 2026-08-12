@@ -68,10 +68,18 @@ describe("RunView", () => {
     expect(link.getAttribute("href")).toBe("/trace/run-123");
   });
 
-  it("completed with no runId yet: omits the 'view trace' link instead of linking to an unknown run", () => {
+  it("completed with a runId: shows a shareable permalink (TDD 0012) pointing at /run/<runId>", () => {
+    render(<RunView status="done" events={[]} result={FULL_RESULT} runId="run-123" />);
+
+    const link = screen.getByTestId("run-permalink");
+    expect(link.getAttribute("href")).toBe("/run/run-123");
+  });
+
+  it("completed with no runId yet: omits both run links instead of linking to an unknown run", () => {
     render(<RunView status="done" events={[]} result={FULL_RESULT} runId={null} />);
 
     expect(screen.queryByTestId("view-trace-link")).toBeNull();
+    expect(screen.queryByTestId("run-permalink")).toBeNull();
   });
 
   it("completed with one degraded section: the degraded tab is marked and its panel shows the degraded note instead of omitting it", () => {

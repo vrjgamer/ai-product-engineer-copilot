@@ -8,6 +8,7 @@ import { PROGRESS_CHUNK_TYPE, type StreamEvent } from "../../../lib/graph/stream
 import { getModelConfig } from "../../../lib/models/provider";
 import { checkRateLimit } from "../../../lib/rate-limit/check";
 import { getClientIp } from "../../../lib/rate-limit/getClientIp";
+import { recordRunResult } from "../../../lib/results/record";
 import { withRunTracing } from "../../../lib/tracing/collect";
 import { computeTotalCostUsd, getPricing } from "../../../lib/tracing/pricing";
 import { appendRunTrace, recordRunTrace } from "../../../lib/tracing/record";
@@ -63,8 +64,10 @@ async function startRun(req: Request, body: GenerateRequestBody): Promise<Respon
   }
 
   const runId = globalThis.crypto.randomUUID();
-  return streamRun(runId, (graph) =>
-    graph.invoke({ request: input }, { configurable: { thread_id: runId } }),
+  return streamRun(
+    runId,
+    (graph) => graph.invoke({ request: input }, { configurable: { thread_id: runId } }),
+    { request: input },
   );
 }
 
@@ -90,9 +93,15 @@ async function resumeRun(body: GenerateRequestBody): Promise<Response> {
 
   const config = { configurable: { thread_id: runId } };
   let paused: boolean;
+  // TDD 0012: the resume body carries only answers, so the request the run
+  // was started from is read off the same snapshot the paused-check already
+  // fetches — one checkpointer read on a path that had already paid for it.
+  let request = "";
   try {
     const snapshot = await buildGraph({ checkpointer: getCheckpointer() }).getState(config);
     paused = snapshot.tasks.some((task) => (task.interrupts?.length ?? 0) > 0);
+    const snapshotRequest = (snapshot.values as { request?: unknown } | undefined)?.request;
+    if (typeof snapshotRequest === "string") request = snapshotRequest;
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : String(error), 500);
   }
@@ -103,12 +112,15 @@ async function resumeRun(body: GenerateRequestBody): Promise<Response> {
 
   return streamRun(runId, (graph) => graph.invoke(new Command({ resume: answers }), config), {
     resumed: true,
+    request,
   });
 }
 
 interface StreamRunOptions {
   /** A resumed leg appends to the run's existing trace row instead of replacing it (TDD 0010). */
   resumed?: boolean;
+  /** The request this run answers, stored beside its result (TDD 0012). */
+  request?: string;
 }
 
 /**
@@ -120,7 +132,7 @@ interface StreamRunOptions {
 function streamRun(
   runId: string,
   invoke: (graph: CompiledGraph) => Promise<unknown>,
-  { resumed = false }: StreamRunOptions = {},
+  { resumed = false, request = "" }: StreamRunOptions = {},
 ): Response {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -153,7 +165,27 @@ function streamRun(
           console.error("Failed to record run trace", tracingError);
         }
 
-        emit(terminalEvent(runId, finalState));
+        const terminal = terminalEvent(runId, finalState);
+
+        // TDD 0012: a completed run's deliverables outlive the tab they were
+        // streamed into, at /run/[runId]. Best-effort on the same terms as
+        // the trace write above — a storage failure must not turn a run the
+        // visitor is about to read into a fatal-error event. A leg that
+        // paused (or failed) has no result and stores nothing.
+        if (terminal.type === "result") {
+          try {
+            await recordRunResult({
+              runId,
+              request,
+              createdAt: new Date().toISOString(),
+              result: terminal.result,
+            });
+          } catch (resultError) {
+            console.error("Failed to record run result", resultError);
+          }
+        }
+
+        emit(terminal);
       } catch (error) {
         emit({
           type: "fatal-error",

@@ -22,6 +22,13 @@ export function TraceView({ trace, evaluation = null }: TraceViewProps) {
   return (
     <section className="trace" data-testid="trace-view">
       <h1 className="section-title">Run trace</h1>
+      {/* TDD 0012: the trace and the plan are two views of one run, so each
+          links to the other. Rendered unconditionally — a run whose result
+          wasn't stored gets the permalink's own not-found state, which
+          explains why, rather than a silently missing link here. */}
+      <a className="trace-link" data-testid="view-plan-link" href={`/run/${trace.runId}`}>
+        View the plan this run produced →
+      </a>
       <dl className="trace-summary">
         <div className="trace-stat">
           <dt>Run ID</dt>
