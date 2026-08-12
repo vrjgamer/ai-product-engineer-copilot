@@ -594,6 +594,29 @@ a:focus-visible {
   color: var(--text-muted);
 }
 
+/* ---------- quality judgment (TDD 0011) ---------- */
+
+.trace-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.trace-unjudged {
+  margin: 0;
+  padding: 0.9rem 1.1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.trace-unjudged code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
 .empty-state {
   margin: 0;
   padding: 2.5rem 1.25rem;

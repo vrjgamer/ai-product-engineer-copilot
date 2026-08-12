@@ -1,0 +1,31 @@
+[
+  {
+    "id": "clinic-scheduling",
+    "request": "A scheduling tool for small dental clinics (2-4 chairs, one receptionist) that cuts no-shows by sending SMS reminders and letting patients reschedule from the message. Patient data is HIPAA-regulated.",
+    "rationale": "The everyday case: specific audience, one named metric, one hard regulatory constraint. If the system can't hold a stated constraint across five documents, it fails here first.",
+    "expectations": [
+      { "deliverable": "prd", "mustMention": ["no-show", "SMS"] },
+      { "deliverable": "architectureReview", "mustMention": ["HIPAA"] },
+      { "deliverable": "experimentDesign", "mustMention": ["no-show"] }
+    ]
+  },
+  {
+    "id": "warehouse-returns",
+    "request": "An internal returns-processing app for a third-party logistics warehouse. Staff scan a barcode on an inbound return, grade its condition, and route it to restock, refurbish, or scrap. Today this is a paper form and takes about 6 minutes per item; the goal is under 2 minutes.",
+    "rationale": "An internal tool with a hard numeric target and a three-way decision rule — checks that the roadmap and experiment design pick up a baseline-and-target framing rather than inventing their own success metric.",
+    "expectations": [
+      { "deliverable": "prd", "mustMention": ["barcode"] },
+      { "deliverable": "userStories", "mustMention": ["scan"] },
+      { "deliverable": "roadmap", "mustMention": ["return"] }
+    ]
+  },
+  {
+    "id": "campus-tutoring",
+    "request": "A marketplace matching university students with peer tutors for specific courses, taking a 15% fee per session. It must be live before the fall semester starts in four months, and the first campus is a single 20,000-student university.",
+    "rationale": "A two-sided marketplace with a fixed deadline and a launch scope — the case most likely to expose a roadmap that plans work it has no time for, or an experiment design that ignores the cold-start side.",
+    "expectations": [
+      { "deliverable": "prd", "mustMention": ["tutor"] },
+      { "deliverable": "roadmap", "mustMention": ["semester"] }
+    ]
+  }
+]

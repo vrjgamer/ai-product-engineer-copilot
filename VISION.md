@@ -67,6 +67,20 @@ demonstrate judgment, not just familiarity with the tools:
   the resulting constraints (a 300-second function-duration ceiling) fed
   back into the graph's design (parallelizing independent sub-agents isn't
   just nicer, it's load-bearing for staying inside that ceiling).
+- **A quality gate that checks its own grader first.** Scoring generated
+  documents with another model is easy to claim and easy to fake — a lenient
+  judge awards 4s to anything fluent, and the resulting suite average is a
+  number that moves when the judge drifts rather than when the product does.
+  So the harness (`npm run eval`) grades two fixed control documents with
+  known verdicts before it grades anything else: a polished PRD that names
+  nothing from the request, which must score at or below 3, and specific user
+  stories tied to the request's own numbers, which must score at or above
+  3.5. If the judge can't tell those apart, the run aborts and reports a
+  broken instrument instead of printing scores. Facts the request made
+  unignorable ("the data is HIPAA-regulated") are checked without a model at
+  all, because a fact shouldn't be delegated to a grader that can be talked
+  out of it. `ARCHITECTURE.md` §9 and `docs/tdd/0011-eval-harness.md` cover
+  both, along with why visitor runs are deliberately left ungraded.
 - **A rate limiter that treats the visitor as a stakeholder, not just a
   threat.** The abuse-protection mechanism doesn't just silently reject
   excess requests — it's paired with a visible, honest note on the demo
@@ -80,13 +94,16 @@ demonstrate judgment, not just familiarity with the tools:
   layer (golden-set regression testing, LLM-as-judge). Both were documented
   in `ARCHITECTURE.md` §9 with the reasoning for deferring them, specifically
   so a reviewer sees a deliberate scoping decision instead of a silent gap.
-  The first has since been built (TDD 0010) — and the more useful thing to
-  read there is that §9 had predicted the work would be additive rather than
-  a redesign, and recorded exactly which files it would touch; when the
-  session that built it came along, that prediction held. A deferral written
-  down well enough to be picked up later is the point. The eval layer is
-  still deferred, and the demo page carries a plain-language version of
-  what's missing, so a visitor who never opens the repo still gets told.
+  Both have since been built (TDD 0010 and TDD 0011) — and the more useful
+  thing to read there is that §9 had predicted, for each of them, how the
+  work would attach: that clarifying questions would be additive rather than
+  a redesign, and that an eval layer would hang off the existing run-trace ID
+  and the existing test-mode split. When the sessions that built them came
+  along, both predictions held. A deferral written down well enough to be
+  picked up later is the point. What the eval layer deliberately still
+  doesn't do — grade live visitor runs, which would roughly double what the
+  demo costs to operate — is on the demo page in plain language, so a visitor
+  who never opens the repo still gets told their own run wasn't scored.
 - **A documentation pass after the build, not just before it.** The last unit
   of work in the sequence (TDD 0009) was re-reading `ARCHITECTURE.md` against
   the shipped code and correcting where the plan had drifted — the MCP
@@ -104,7 +121,7 @@ Given the volume of decisions involved in a rebuild like this, the actual
 implementation was broken into a series of Technical Design Documents (TDDs)
 under [`docs/tdd/`](./docs/tdd) — each one scoped to be picked up and
 implemented standalone, test-first, without needing to re-derive the
-decisions in `ARCHITECTURE.md` from scratch. All ten have landed; see the
+decisions in `ARCHITECTURE.md` from scratch. All eleven have landed; see the
 table in [`README.md`](./README.md) for what each covered. This mirrors
 how a real engineering team would sequence a rebuild of this scope: a shared
 design record, then independently implementable, reviewable units of work —
@@ -115,9 +132,10 @@ rather than one undifferentiated pile of code landing at once.
 It is a portfolio demo, not a production PM tool. It uses a cheap model
 tuned for cost over maximum output quality; its "real" integrations are
 deliberately narrow (one document corpus, one GitHub-backed metrics source);
-it does not (yet) support the kind of clarifying-question back-and-forth a
-production copilot would eventually need; and nothing automatically evaluates
-whether the documents it writes are any good — each run gets a trace of what
-it did, not a score for what it produced. Those boundaries are described here
-on purpose — overclaiming what a demo does is a worse signal than being
+it asks clarifying questions once, up front, rather than sustaining the
+back-and-forth a production copilot would eventually need; and quality
+scoring is a harness run by hand against three fixed cases before a deploy,
+not something grading live traffic — the run a visitor does gets a trace of
+what it did, not a score for what it produced. Those boundaries are described
+here on purpose — overclaiming what a demo does is a worse signal than being
 precise about its actual scope.
