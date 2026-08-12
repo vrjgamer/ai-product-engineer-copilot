@@ -1,0 +1,20 @@
+[
+  {
+    "id": "bad-generic-prd",
+    "control": "bad",
+    "request": "A scheduling tool for small dental clinics that cuts no-shows by sending SMS reminders. Patient data is HIPAA-regulated.",
+    "deliverable": "prd",
+    "content": "# Product Requirements\n\n## Overview\nThis product will deliver significant value to users by addressing their key needs in a modern, scalable way. It will be intuitive, reliable, and delightful to use.\n\n## Goals\n- Improve the user experience\n- Drive engagement and retention\n- Ensure the platform is scalable and secure\n\n## Requirements\n- The system should have a clean, modern interface\n- The system should be performant under load\n- The system should support the core workflows end to end\n- The system should follow industry best practices\n\n## Success Metrics\n- Increased user satisfaction\n- Higher adoption\n- Reduced friction\n\n## Out of Scope\nAnything not described above is out of scope for the initial release.",
+    "rationale": "Fluent, well-formatted, and says nothing: no clinic, no reminder, no HIPAA, no number. A judge that scores this above the ceiling is rewarding format over content, which is exactly the bias that makes a suite average meaningless.",
+    "expectedScoreMax": 3
+  },
+  {
+    "id": "good-specific-stories",
+    "control": "good",
+    "request": "An internal returns-processing app for a third-party logistics warehouse. Staff scan a barcode on an inbound return, grade its condition, and route it to restock, refurbish, or scrap. Today this is a paper form and takes about 6 minutes per item; the goal is under 2 minutes.",
+    "deliverable": "userStories",
+    "content": "## US-1 — Scan an inbound return\nAs a warehouse associate, I scan the barcode on a returned item so that its order and SKU load without typing.\nAcceptance criteria:\n- Scanning a known barcode loads order ID, SKU, and purchase date in under 1 second.\n- An unknown barcode shows a \"not found\" state with a manual order-ID entry field, and does not block the queue.\n- The scan field holds focus after each item, so an associate can scan continuously without touching the screen.\n\n## US-2 — Grade condition\nAs a warehouse associate, I record the item's condition so the routing decision is auditable.\nAcceptance criteria:\n- Condition is one of: sellable, refurbishable, scrap — one tap each, no free text required.\n- Selecting \"scrap\" requires one of four reason codes (damaged, missing parts, expired, counterfeit).\n- Each grading writes associate ID and timestamp to the item's audit record.\n\n## US-3 — Route the item\nAs a warehouse associate, I am told where the item goes so I can place it without asking a supervisor.\nAcceptance criteria:\n- After grading, the screen shows the destination bin location in text at least 24px tall.\n- Sellable items route to restock; refurbishable to the refurb queue; scrap to the disposal cage.\n- The item is not marked complete until a destination bin is confirmed by scan.\n\n## US-4 — Supervisor throughput view\nAs a shift supervisor, I see per-associate throughput so I can tell whether we are beating the 2-minute target.\nAcceptance criteria:\n- The view shows median seconds per item for the current shift, per associate and overall.\n- The view flags any item held longer than 10 minutes as stalled.",
+    "rationale": "Specific, testable, and tied to the stated 6-minute baseline and 2-minute target. A judge that cannot score this above the floor is grading noise, and every case score it produces is suspect.",
+    "expectedScoreMin": 3.5
+  }
+]

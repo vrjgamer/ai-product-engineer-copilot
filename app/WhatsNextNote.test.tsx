@@ -7,13 +7,20 @@ import { WhatsNextNote } from "./WhatsNextNote";
 afterEach(cleanup);
 
 describe("WhatsNextNote", () => {
-  it("names the deferred eval/rigor layer in plain language", () => {
+  it("names the eval/rigor layer in plain language", () => {
     render(<WhatsNextNote />);
 
     const text = screen.getByTestId("whats-next-note").textContent ?? "";
-    // ARCHITECTURE.md §9's remaining deferred capability. The honest framing
-    // is that runs aren't automatically scored for quality.
     expect(text).toMatch(/scor|grad|eval/i);
+  });
+
+  it("is honest about the limit TDD 0011 left: the harness exists, but this run wasn't graded", () => {
+    render(<WhatsNextNote />);
+
+    const text = screen.getByTestId("whats-next-note").textContent ?? "";
+    expect(text).toMatch(/wasn.t graded/i);
+    // The old "nothing scores it" claim became false once the harness landed.
+    expect(text).not.toMatch(/nothing automatically scores/i);
   });
 
   it("says what the demo does instead, rather than only what's missing", () => {

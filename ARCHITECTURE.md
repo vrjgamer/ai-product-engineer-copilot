@@ -348,9 +348,12 @@ points at `/trace/[runId]`. Two deliberate properties: a run that degraded (§3)
 a complete trace, and a failure to *write* the trace is logged but never turned into a
 user-visible run failure.
 
-The full eval/rigor concept is not dropped — it's named explicitly in §9 as deferred
-work, with the reasoning for deferring it stated, rather than silently disappearing the
-way it would if this document just didn't mention it.
+The full eval/rigor concept was not dropped — it was named explicitly in §9 as deferred
+work, with the reasoning stated, rather than silently disappearing the way it would if this
+document just didn't mention it. TDD 0011 has since built it, as a manually-invoked
+golden-set harness rather than as anything in the request path: the trace still records
+what a run *did*, and a separate `run_evals` row (written only by the harness) records how
+good a graded run's output was. §9 covers it.
 
 ---
 
@@ -377,16 +380,22 @@ and every PR. `npm run test:e2e` is four real-API scripts run in sequence —
 (TDD 0010: a real triage call parks a run at `interrupt()`, a separately-constructed
 checkpointer resumes it), `scripts/mcp-roundtrip.ts` (real `get_repo_stats` and
 `search_docs`) — and is deliberately absent from the CI workflow.
-The one thing neither suite covers is the streaming UX of a full real run end-to-end
+TDD 0011 added a third mode alongside those two: `npm run eval`, the golden-set regression
+harness (§9). It is manual for the same reason `test:e2e` is, only more so — it runs the
+whole graph once per golden case plus five judge calls each, so it is a pre-deploy check
+rather than a smoke test, and it is deliberately not part of `test:e2e` either.
+The one thing none of the three covers is the streaming UX of a full real run end-to-end
 through the route and page; that stays a manual `npm run dev` check, because asserting on
 a ~300-second streaming run isn't practical to automate at this project's scale.
 
 ---
 
-## 9. Human-in-the-loop, and the one capability still deferred
+## 9. Human-in-the-loop and output evaluation: both deferred out of v1, both since built
 
-Two capabilities were designed against, then deliberately scoped out of v1. One of them has
-since been built; the other is still deferred, and still deliberately.
+Two capabilities were designed against, then deliberately scoped out of v1. Both have since
+been built — clarifying questions by TDD 0010, the eval layer by TDD 0011 — and the record
+below keeps the original reasoning alongside what shipped, since the scope cuts were the
+decisions worth defending at the time.
 
 ### Clarifying questions (built — TDD 0010)
 
@@ -425,23 +434,49 @@ was always a legitimate outcome. The `memory` table (§4) still has no identity 
 facts by; the answers would have been a natural hook, but this demo has no auth and hashed
 IPs are deliberately not an identity, so that stayed unbuilt rather than faked.
 
-### Full eval/rigor layer (still deferred)
+### Full eval/rigor layer (built — TDD 0011)
 
-Golden-set regression testing, LLM-as-judge with bias checks, the four-tag failure taxonomy
-— deferred in favor of the lightweight run trace (§7); the natural upgrade path once this
-project has enough real usage/change volume to justify a regression gate.
+Golden-set regression testing, LLM-as-judge with bias checks, and the four-tag failure
+taxonomy were deferred in favor of the lightweight run trace (§7), on the grounds that a
+regression gate needs something to gate. The entry here predicted two attachment points —
+the trace row's `run_id`, and the §8 test split as a third mode — and the build used both
+without changing either decision's terms.
 
-*Where it would attach, given what shipped.* `run_traces` records what a run *did*
-(latency, tokens, cost, MCP calls) but nothing about whether the output was any *good* —
-there is no quality column, and deliberately so. A later eval layer has two clean seams to
-attach to: the trace row itself (a judge score per run, alongside the existing per-node
-data) and the test split from §8, where a golden-set harness would be a third mode next to
-the mocked `npm test` and the manual `npm run test:e2e` — it needs real model calls, so it
-can't join the CI suite without changing that decision's terms.
+**How it works as built.** `npm run eval` (`scripts/eval.ts`) runs the real graph over the
+three requests in `eval/golden/cases.json`, each as a normal traced run with its own
+`run_id`, then grades each of the five deliverables in a *separate* judge call against a
+four-dimension rubric (specificity, coherence, actionability, completeness, 1–5) and the
+four-tag taxonomy (`unsupported-claim`, `missing-requirement`, `internal-contradiction`,
+`generic-filler`). The judgment lands in a `run_evals` row keyed by that same `run_id`
+(FK to `run_traces`), so a graded run shows a quality section at `/trace/[runId]` and
+every other run says, in as many words, that it wasn't graded. The gate compares the suite
+against a committed `eval/baseline.json` and exits non-zero on a regression, a score below
+an absolute floor, an unmet deterministic check, or a missing deliverable.
 
-The demo page carries a short, plain-language version of what's still missing
-(`app/WhatsNextNote.tsx`) — a visitor who runs the demo shouldn't have to open this
-document to learn what it deliberately doesn't do.
+**The bias check is a control document, not a promise.** "LLM-as-judge with bias checks"
+is easy to claim and hard to mean. Here it is two fixed documents in
+`eval/golden/controls.json` with known verdicts — a fluent PRD that says nothing, which
+the judge must score at or below 3, and specific user stories tied to the request's stated
+numbers, which it must score at or above 3.5. They are graded *first*, and a failure aborts
+the run before it spends anything on graph runs: a judge that can't tell those two apart
+produces scores nobody should act on, and the honest report is "the instrument is broken",
+not a list of what look like product regressions. `JUDGE_PROVIDER`/`JUDGE_MODEL_ID` exist
+so the judge can be a different — ideally stronger — model than the graph's deliberately
+cheapest-available default (§2); the controls are what tell you whether the one you picked
+is good enough.
+
+**What was deliberately not built with it.** Visitor runs are not judged: five extra model
+calls per run roughly doubles the spend on a demo whose cost argument is that it's cheap,
+and adds latency inside the 300s ceiling (§5). The harness is not in CI — §8's reasoning
+about secrets and spend applies more strongly to it than to `test:e2e`, so it stays a
+pre-deploy command. And the golden set carries *expectations* (`mustMention` substrings
+checked without a model, so the facts a request made unignorable aren't delegated to a
+grader that can be talked out of them), not reference answers: scoring similarity to five
+hand-written "correct" PRDs would measure conformity to one author's taste.
+
+The demo page carries a short, plain-language version of where this leaves a visitor
+(`app/WhatsNextNote.tsx`): the harness exists, but *your* run wasn't graded — someone who
+just ran the demo shouldn't have to open this document to find that out.
 
 ---
 
@@ -456,7 +491,9 @@ document to learn what it deliberately doesn't do.
 | Persistence | Separate vector DB + separate session/KV store | Real infrastructure to operate for a workload that doesn't need it |
 | Request handling | Background job + polling/subscription | Doubles the moving parts for a low-traffic demo that synchronous streaming already handles |
 | Hosting | Vercel Pro | Free tier is workable given the parallelized graph shape and Fluid Compute's 300s ceiling |
-| Observability | Full golden-set/LLM-as-judge eval layer for v1 | Disproportionate infrastructure without production traffic/change volume to gate |
+| Observability | Full golden-set/LLM-as-judge eval layer for v1 | Disproportionate infrastructure without production traffic/change volume to gate — deferred to v2 and since built by TDD 0011 |
+| Eval scope | Judging every visitor run inline | Roughly doubles model spend and adds latency inside the 300s ceiling, to grade runs nobody reads the grade of |
+| Eval ground truth | Reference "correct" documents to score similarity against | Measures conformity to one author's taste; `mustMention` checks plus a rubric measure whether the output is usable |
 | Conversation shape | Clarifying-question support (interrupt/resume) in v1 | Changed single-shot into multi-turn — real scope, deferred to v2 and since built by TDD 0010 |
 | Clarification shape | A full chat loop (ask, answer, re-ask, refine) | One pause before the PRD covers the ambiguity that actually breaks a plan; a chat is a different product |
 
@@ -467,9 +504,9 @@ document to learn what it deliberately doesn't do.
 This document describes the target architecture. The actual build was sequenced as a
 series of Technical Design Documents under [`docs/tdd/`](./docs/tdd), each scoped to be
 implementable standalone, test-first, by a future session without re-deriving the
-decisions above. All ten have landed; each one's "as built" notes are folded into the
+decisions above. All eleven have landed; each one's "as built" notes are folded into the
 sections above. 0001-0008 built the system, 0009 reconciled these documents with it, and
-0010 built the first capability 0009 had recorded as deferred.
+0010 and 0011 built the two capabilities 0009 had recorded as deferred.
 
 1. [`0001-app-scaffold-and-model-provider.md`](./docs/tdd/0001-app-scaffold-and-model-provider.md)
 2. [`0002-langgraph-core.md`](./docs/tdd/0002-langgraph-core.md)
@@ -481,3 +518,4 @@ sections above. 0001-0008 built the system, 0009 reconciled these documents with
 8. [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md)
 9. [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md)
 10. [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md)
+11. [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md)

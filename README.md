@@ -40,7 +40,7 @@ output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
 
 ## Current status
 
-**All ten TDDs have landed — the system described in `ARCHITECTURE.md` is
+**All eleven TDDs have landed — the system described in `ARCHITECTURE.md` is
 built.** What that means concretely:
 
 - A visitor types a free-text product description and gets five
@@ -68,14 +68,20 @@ built.** What that means concretely:
   every push and PR; a separate `npm run test:e2e` exercises the real model,
   a real Postgres checkpointer, a real interrupt/resume round-trip, and the
   real MCP tools manually.
+- `npm run eval` is the golden-set regression harness (TDD 0011): it runs the
+  real graph over `eval/golden/cases.json`, has a second model grade each
+  deliverable against a rubric and a four-tag failure taxonomy, checks its
+  own judge against control documents with known verdicts before believing a
+  single score, and fails on a regression against a committed baseline.
 
 Honest edges, documented rather than glossed: the `memory` table shipped but
 nothing in the request path uses it yet (there's still no user identity — an
 answer to a clarifying question belongs to a run, not to a person); the
-clarification pause is one question round, not a conversation; and nothing
-automatically scores output quality. `ARCHITECTURE.md` §9 covers the eval
-layer — why it was cut from v1 and what adding it would touch — and the demo
-page says so in plain language too.
+clarification pause is one question round, not a conversation; and quality
+scoring is a harness you run by hand against fixed cases, not something that
+grades live traffic — judging every visitor run would roughly double what the
+demo costs to operate. `ARCHITECTURE.md` §9 covers that trade, and the demo
+page says it in plain language too.
 
 ## Implementation sequence (TDDs)
 
@@ -94,6 +100,7 @@ without needing to re-derive the decisions in `ARCHITECTURE.md`.
 | 8 | [`0008-ci-and-test-strategy.md`](./docs/tdd/0008-ci-and-test-strategy.md) | CI workflow, mocked-vs-real-API test suite split |
 | 9 | [`0009-future-work-docs.md`](./docs/tdd/0009-future-work-docs.md) | Docs reconciled against the shipped system; visitor-facing note on what's deliberately deferred |
 | 10 | [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md) | Human-in-the-loop: the supervisor triages vague requests, the graph pauses at `interrupt()`, the route resumes it with the answers |
+| 11 | [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md) | Golden-set eval harness: calibrated LLM-as-judge, four-tag failure taxonomy, deterministic checks, regression gate |
 
 ## Setup
 
@@ -150,3 +157,28 @@ DATABASE_URL=postgres://... ANTHROPIC_API_KEY=sk-... GOOGLE_GENERATIVE_AI_API_KE
 real end-to-end run through the actual streaming route and UI (TDD 0005) is
 verified manually via `npm run dev` — it isn't automated, since asserting
 streaming UX over a real ~300s run isn't practical in a script.
+
+`npm run eval` is the third mode (TDD 0011) — also manual, also absent from
+CI, and more expensive than either of the others: it runs the whole graph
+once per golden case, then makes five judge calls per run.
+
+```
+DATABASE_URL=postgres://... ANTHROPIC_API_KEY=sk-... npm run eval
+npm run eval -- --update-baseline    # snapshot a passing suite as the new baseline
+```
+
+It grades the two control documents in `eval/golden/controls.json` first and
+aborts if the judge can't tell them apart — a lenient or severe judge makes
+every score below it meaningless, so that's reported as a broken instrument
+rather than as a product regression. Then each case in
+`eval/golden/cases.json` runs as a normal traced run (inspectable at
+`/trace/<runId>`, with a quality section the visitor-facing runs don't have),
+is checked against model-free `mustMention` expectations, and is scored 1–5
+on four rubric dimensions with any of four failure tags attached. The gate
+exits non-zero on a regression against `eval/baseline.json`, a score below
+the absolute floor, an unmet expectation, or a missing deliverable.
+`eval/baseline.json` is not committed here — it can only be produced by a
+real run, so record one with `--update-baseline` and commit it; until then
+the gate enforces the floor and says the baseline is missing. Set
+`JUDGE_PROVIDER`/`JUDGE_MODEL_ID` to grade with a different (ideally
+stronger) model than the graph runs on.

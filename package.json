@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "test:e2e": "npx tsx scripts/model-roundtrip.ts && npx tsx scripts/checkpoint-roundtrip.ts && npx tsx scripts/clarification-roundtrip.ts && npx tsx scripts/mcp-roundtrip.ts"
+    "test:e2e": "npx tsx scripts/model-roundtrip.ts && npx tsx scripts/checkpoint-roundtrip.ts && npx tsx scripts/clarification-roundtrip.ts && npx tsx scripts/mcp-roundtrip.ts",
+    "eval": "npx tsx scripts/eval.ts"
   },
   "keywords": [],
   "author": "",

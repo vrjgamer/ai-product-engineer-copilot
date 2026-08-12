@@ -12,8 +12,13 @@ const PROVIDER_API_KEY_ENV_VAR: Record<string, string> = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 };
 
+export interface ModelConfig {
+  provider: string;
+  modelId: string;
+}
+
 /** Resolves `MODEL_PROVIDER`/`MODEL_ID` from the environment — shared by `getModel()` and TDD 0007's pricing lookup, which needs to know the model without constructing a client. */
-export function getModelConfig(): { provider: string; modelId: string } {
+export function getModelConfig(): ModelConfig {
   return {
     provider: process.env.MODEL_PROVIDER ?? DEFAULT_PROVIDER,
     modelId: process.env.MODEL_ID ?? DEFAULT_MODEL_ID,
@@ -23,9 +28,13 @@ export function getModelConfig(): { provider: string; modelId: string } {
 /**
  * The only place in the codebase that imports a `@ai-sdk/*` provider package
  * directly. Every graph node calls `getModel()`, never a provider package.
+ *
+ * The optional `config` exists for one caller: TDD 0011's judge, which may
+ * deliberately run on a *different* model than the graph does (see
+ * `lib/eval/judgeModel.ts`). Everything else takes the default.
  */
-export function getModel(): LanguageModel {
-  const { provider, modelId } = getModelConfig();
+export function getModel(config: ModelConfig = getModelConfig()): LanguageModel {
+  const { provider, modelId } = config;
 
   const apiKeyEnvVar = PROVIDER_API_KEY_ENV_VAR[provider];
   if (!apiKeyEnvVar) {
