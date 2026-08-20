@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import type { AssembledResult } from "../../lib/graph/state";
 
@@ -59,7 +61,9 @@ export function ResultView({ result }: ResultViewProps) {
         return (
           <div className="panel" key={section.key} role="tabpanel" data-testid={`panel-${section.key}`}>
             {content ? (
-              <p data-testid={`content-${section.key}`}>{content.content}</p>
+              <div className="markdown" data-testid={`content-${section.key}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
+              </div>
             ) : (
               <p className="unavailable" data-testid={`unavailable-${section.key}`}>
                 This section is unavailable{errorMessage ? ` — ${errorMessage}` : ""}.
