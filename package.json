@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "tsx scripts/migrate.ts || echo 'Migration step failed — continuing build, but check logs.'; next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p .",
@@ -28,6 +29,7 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.0",
     "jsdom": "^30.0.1",
+    "tsx": "^4.23.12",
     "typescript": "^6.0.3",
     "vitest": "^3.2.7"
   },
