@@ -83,7 +83,15 @@ export default function Home() {
       }
 
       if (!response.ok || !response.body) {
-        throw new Error(`Request failed (${response.status})`);
+        // The route answers every non-streaming failure with a JSON `error`
+        // string; showing that beats a bare status code, which is all the
+        // visitor used to get when the server-side check failed.
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(
+          typeof errorBody?.error === "string"
+            ? errorBody.error
+            : `Request failed (${response.status})`,
+        );
       }
 
       await consume(response.body);

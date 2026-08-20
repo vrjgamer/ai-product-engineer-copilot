@@ -68,6 +68,25 @@ describe("Home page", () => {
     expect(screen.queryByTestId("run-fatal-error")).toBeNull();
   });
 
+  it("shows the server's explanation for a non-streaming failure rather than a bare status code", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: "The demo can't reach its database right now, so runs are paused." }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    render(<Home />);
+    fireEvent.change(screen.getByPlaceholderText("Describe the product or feature you want a plan for"), {
+      target: { value: "Build a todo app" },
+    });
+    fireEvent.click(screen.getByText("Generate plan"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("run-fatal-error").textContent).toContain("can't reach its database");
+    });
+  });
+
   it("shows a 'view trace' link pointing at the run id streamed in the result event (TDD 0007)", async () => {
     const result = {
       prd: { content: "PRD content" },

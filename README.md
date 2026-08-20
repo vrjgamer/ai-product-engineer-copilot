@@ -121,6 +121,15 @@ npx tsx scripts/index-docs.ts  # optional: builds docs-store's corpus
 npm run dev
 ```
 
+A deployment needs the same three things a local checkout does: the model
+API key, `DATABASE_URL`, and `RATE_LIMIT_IP_SALT` set in the hosting
+project's environment, plus `scripts/migrate.ts` having been run **against
+that deployment's database** — the `rate_limits` table is read on every
+`POST /api/generate` before the graph is touched. Miss any of them and the
+route answers `503` with a "can't reach its database" message instead of
+starting a run; the underlying error (missing variable, missing table,
+unreachable host) is in the server logs.
+
 `RATE_LIMIT_IP_SALT` is required — visitor IPs are hashed with it before
 they're written to the `rate_limits` table, and are never stored raw. The
 indexing step is optional but recommended: without it `search_docs` returns

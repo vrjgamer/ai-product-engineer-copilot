@@ -6,7 +6,7 @@ import { buildGraph, type CompiledGraph } from "../../../lib/graph";
 import { withProgressEmitter } from "../../../lib/graph/progress";
 import { PROGRESS_CHUNK_TYPE, type StreamEvent } from "../../../lib/graph/streamProtocol";
 import { getModelConfig } from "../../../lib/models/provider";
-import { checkRateLimit } from "../../../lib/rate-limit/check";
+import { checkRateLimit, type RateLimitResult } from "../../../lib/rate-limit/check";
 import { getClientIp } from "../../../lib/rate-limit/getClientIp";
 import { recordRunResult } from "../../../lib/results/record";
 import { withRunTracing } from "../../../lib/tracing/collect";
@@ -53,7 +53,25 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 async function startRun(req: Request, body: GenerateRequestBody): Promise<Response> {
-  const rateLimitResult = await checkRateLimit(getClientIp(req));
+  // The limiter is the only thing standing between a public URL and this
+  // project's API-key spend, so a limiter that can't run fails *closed*. It
+  // throws when its dependencies are missing or unreachable — no
+  // DATABASE_URL, no RATE_LIMIT_IP_SALT, migrations never applied against
+  // the deployment's database, Postgres down. Left uncaught, every one of
+  // those surfaces to the browser as a bare 500 with an empty body ("status
+  // 500, response undefined"), which says nothing about which of them it
+  // was; caught here, the visitor gets a sentence and the server log gets
+  // the real error.
+  let rateLimitResult: RateLimitResult;
+  try {
+    rateLimitResult = await checkRateLimit(getClientIp(req));
+  } catch (error) {
+    console.error("Rate-limit check failed", error);
+    return jsonError(
+      "The demo can't reach its database right now, so runs are paused. Try again in a few minutes.",
+      503,
+    );
+  }
   if (!rateLimitResult.allowed) {
     return rateLimitedResponse(rateLimitResult.retryAfterSeconds);
   }

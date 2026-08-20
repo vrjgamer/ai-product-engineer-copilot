@@ -265,6 +265,27 @@ describe("POST /api/generate", () => {
     expect(checkRateLimit).toHaveBeenCalledWith("203.0.113.7");
   });
 
+  // A limiter that can't run is the one failure the route used to leak as a
+  // bare 500 with an empty body — missing DATABASE_URL/RATE_LIMIT_IP_SALT on
+  // a deployment, or migrations never applied, both throw from here.
+  it("returns a 503 with a readable message when the rate-limit check itself throws, without invoking the graph", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    checkRateLimit.mockRejectedValue(new Error("Missing RATE_LIMIT_IP_SALT."));
+
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toMatch(/database/i);
+    // Fails closed: no graph run, so a broken limiter can't be a free pass.
+    expect(buildGraph).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    // The underlying cause still has to be diagnosable server-side.
+    expect(consoleError).toHaveBeenCalledWith("Rate-limit check failed", expect.any(Error));
+    consoleError.mockRestore();
+  });
+
   it("does not invoke the graph for a rate-limited request even with an otherwise-invalid body", async () => {
     checkRateLimit.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
 
