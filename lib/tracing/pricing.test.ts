@@ -17,6 +17,17 @@ describe("getPricing", () => {
       inputPerMillionUsd: 0.15,
       outputPerMillionUsd: 0.6,
     });
+    expect(getPricing("google", "gemini-2.5-flash")).toEqual({
+      inputPerMillionUsd: 0.3,
+      outputPerMillionUsd: 2.5,
+    });
+  });
+
+  it("still prices retired models' historical traces instead of reporting $0", () => {
+    expect(getPricing("google", "gemini-3.6-flash")).toEqual({
+      inputPerMillionUsd: 0.75,
+      outputPerMillionUsd: 3.75,
+    });
     expect(getPricing("google", "gemini-2.0-flash")).toEqual({
       inputPerMillionUsd: 0.1,
       outputPerMillionUsd: 0.4,

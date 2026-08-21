@@ -130,8 +130,8 @@ kind of structured generation these sub-agents do. Estimated cost is roughly $0.
 full demo run (5 sub-agents × 1-3 calls each), cheaper still with prompt caching on the
 shared system prompt.
 
-**What actually runs in production: Gemini 3.6 Flash** (`MODEL_PROVIDER=google`,
-`MODEL_ID=gemini-3.6-flash`, set in Vercel — see `.env.example` and §12). Anthropic has no
+**What actually runs in production: Gemini 2.5 Flash** (`MODEL_PROVIDER=google`,
+`MODEL_ID=gemini-2.5-flash`, set in Vercel — see `.env.example` and §12). Anthropic has no
 free API tier and the Google key is the one available at no cost, so the deployed demo
 runs on the cheapest-sufficient-model reasoning above, applied to a different provider —
 the switch was a config change, not a code change, which is what that reasoning was for.
@@ -595,7 +595,7 @@ called at the top of `POST /api/generate`) rather than discovered one throw at a
 | `RATE_LIMIT_IP_SALT` | Always | `lib/rate-limit/hashIp.ts` — hashes visitor IPs before they're ever persisted (§6) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Whichever one matches `MODEL_PROVIDER` (default `anthropic`) | `lib/models/provider.ts` (§2) |
 | `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Whichever one matches `EMBEDDING_PROVIDER` (default `google`) — independently of `MODEL_PROVIDER`, since Anthropic has no embeddings API | `mcp/docs-store/embeddings.ts` (§3) |
-| `MODEL_PROVIDER` / `MODEL_ID` | Optional; defaults to `anthropic`/`claude-haiku-4-5` | Whichever provider actually runs (§2) — the deployed value is `google`/`gemini-3.6-flash` |
+| `MODEL_PROVIDER` / `MODEL_ID` | Optional; defaults to `anthropic`/`claude-haiku-4-5` | Whichever provider actually runs (§2) — the deployed value is `google`/`gemini-2.5-flash` |
 | `EMBEDDING_PROVIDER` | Optional; defaults to `google` | `mcp/docs-store/embeddings.ts` |
 | `GITHUB_TOKEN` | Optional but recommended | `mcp/analytics` — unauthenticated GitHub is 60 req/hr, comfortably inside the 1-hour cache TTL (§3) without it |
 | `GITHUB_DEMO_REPO`, `RATE_LIMIT_MAX_RUNS_PER_HOUR`, `JUDGE_PROVIDER`, `JUDGE_MODEL_ID` | Optional | Have code defaults or are read only by `npm run eval`, never by a visitor request |

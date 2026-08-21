@@ -18,13 +18,12 @@ export interface TokenPricing {
 const PRICING_BY_PROVIDER_MODEL: Record<string, TokenPricing> = {
   "anthropic:claude-haiku-4-5": { inputPerMillionUsd: 1, outputPerMillionUsd: 5 },
   "openai:gpt-4o-mini": { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 },
-  // Introductory pricing, published as running through 2026-12-31; the
-  // standard rate after that is $1.50/$7.50, so this row has a known
-  // expiry rather than the open-ended life the others have.
-  "google:gemini-3.6-flash": { inputPerMillionUsd: 0.75, outputPerMillionUsd: 3.75 },
-  // Retired by Google (the API now refuses it and points at 3.6). Kept so
-  // historical `/trace/[runId]` pages for runs made on it still price their
+  // Deployed model as of the MODEL_ID=gemini-2.5-flash switch.
+  "google:gemini-2.5-flash": { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
+  // Retired rows, kept so historical `/trace/[runId]` and `/run/[runId]`
+  // pages for runs made on an earlier deployed model still price their
   // stored token counts instead of silently reporting $0.
+  "google:gemini-3.6-flash": { inputPerMillionUsd: 0.75, outputPerMillionUsd: 3.75 },
   "google:gemini-2.0-flash": { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.4 },
 };
 

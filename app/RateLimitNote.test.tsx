@@ -12,6 +12,6 @@ describe("RateLimitNote", () => {
 
     const text = screen.getByTestId("rate-limit-note").textContent;
     expect(text).toContain("5 runs/hour");
-    expect(text).toContain("Gemini 3.6 Flash");
+    expect(text).toContain("Gemini 2.5 Flash");
   });
 });

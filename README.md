@@ -36,7 +36,7 @@ on Vercel's free tier with Fluid Compute.
 
 Code default model: Claude Haiku 4.5 — chosen deliberately as the cheapest
 current Claude model, since this is a public demo rather than a system
-optimizing for output quality. The deployed demo actually runs Gemini 3.6
+optimizing for output quality. The deployed demo actually runs Gemini 2.5
 Flash (the key available at no cost — Anthropic has no free tier). See
 `ARCHITECTURE.md` §2 for the reasoning and §12 for what's actually deployed.
 
@@ -57,7 +57,7 @@ built.** What that means concretely:
   (TDD 0010). Answering is optional — skipping runs it on stated assumptions.
 - Model calls go through one provider seam (`lib/models/provider.ts`,
   `MODEL_PROVIDER`/`MODEL_ID`), code-defaulting to Claude Haiku 4.5 but
-  actually deployed on Gemini 3.6 Flash.
+  actually deployed on Gemini 2.5 Flash.
 - Two MCP servers do real work: `docs-store` runs pgvector search over this
   repo's own indexed docs, `analytics` pulls real GitHub repo stats with a
   TTL cache. Both are real MCP JSON-RPC over an in-process transport, and an
