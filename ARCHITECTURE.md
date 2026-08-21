@@ -543,3 +543,17 @@ one gap none of them had noticed: a completed run's output didn't outlive its br
 10. [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md)
 11. [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md)
 12. [`0012-durable-results.md`](./docs/tdd/0012-durable-results.md)
+
+Queued, not yet built:
+
+13. [`0013-production-hardening.md`](./docs/tdd/0013-production-hardening.md) —
+    partially landed; the deployment-configuration gaps it documents are what
+    made the demo return five empty panels in production.
+14. `0014` — chat-style UI redesign.
+15. `0015` — animated graph traversal, absorbing `/trace/[runId]`.
+16. [`0016-domain-corpus.md`](./docs/tdd/0016-domain-corpus.md) — replaces the
+    self-referential `search_docs` corpus with domain documents the example
+    prompts can actually be grounded in.
+17. [`0017-web-search-fallback.md`](./docs/tdd/0017-web-search-fallback.md) —
+    a relevance floor (which is what makes "no grounding found" a state that
+    can exist at all) plus a web-search fallback for when it isn't cleared.
