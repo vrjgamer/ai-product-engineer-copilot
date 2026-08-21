@@ -12,6 +12,14 @@ const checkRateLimit = vi.fn(
 const recordRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
 const appendRunTrace = vi.fn((..._args: unknown[]) => Promise.resolve());
 const recordRunResult = vi.fn((..._args: unknown[]) => Promise.resolve());
+// Defaults to a valid environment so every other test in this file exercises
+// route logic, not this machine's real process.env — TDD 0013's misconfigured-
+// deployment behavior gets its own describe block below, which overrides this.
+const validateEnv = vi.fn((..._args: unknown[]) => ({ ok: true, missing: [] as string[] }));
+
+vi.mock("../../../lib/config/validate", () => ({
+  validateEnv: (...args: unknown[]) => validateEnv(...args),
+}));
 
 vi.mock("../../../lib/graph", () => ({
   buildGraph: (...args: unknown[]) => buildGraph(...args),
@@ -86,6 +94,8 @@ describe("POST /api/generate", () => {
     invoke.mockResolvedValue({ result: RESULT });
     checkRateLimit.mockReset();
     checkRateLimit.mockResolvedValue({ allowed: true });
+    validateEnv.mockReset();
+    validateEnv.mockReturnValue({ ok: true, missing: [] });
     recordRunTrace.mockReset();
     recordRunTrace.mockResolvedValue(undefined);
     appendRunTrace.mockReset();
@@ -275,6 +285,51 @@ describe("POST /api/generate", () => {
   });
 });
 
+/** TDD 0013: a misconfigured deployment fails once, loudly, before touching the rate limiter or the graph. */
+describe("POST /api/generate — config guard", () => {
+  beforeEach(() => {
+    buildGraph.mockClear();
+    checkRateLimit.mockReset();
+    checkRateLimit.mockResolvedValue({ allowed: true });
+    validateEnv.mockReset();
+    validateEnv.mockReturnValue({ ok: true, missing: [] });
+  });
+
+  it("returns a JSON 500 naming every missing var instead of invoking the rate limiter or the graph", async () => {
+    validateEnv.mockReturnValue({ ok: false, missing: ["DATABASE_URL", "RATE_LIMIT_IP_SALT"] });
+
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("DATABASE_URL");
+    expect(body.error).toContain("RATE_LIMIT_IP_SALT");
+    expect(checkRateLimit).not.toHaveBeenCalled();
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("also guards a resume request, not just a fresh run", async () => {
+    validateEnv.mockReturnValue({ ok: false, missing: ["DATABASE_URL"] });
+
+    const response = await POST(postRequest({ runId: "run-1", answers: ["Designers"] }));
+
+    expect(response.status).toBe(500);
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+
+  it("returns a JSON 500 (not a bare platform 500) when the rate limiter itself throws", async () => {
+    checkRateLimit.mockRejectedValue(new Error("Missing RATE_LIMIT_IP_SALT."));
+
+    const response = await POST(postRequest({ input: "Build a todo app" }));
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("RATE_LIMIT_IP_SALT");
+    expect(buildGraph).not.toHaveBeenCalled();
+  });
+});
+
 /** TDD 0010: the run can end a leg by asking instead of by finishing, and be resumed with the answers. */
 describe("POST /api/generate — clarifying questions", () => {
   const QUESTIONS = ["Who is this for?", "What metric does it move?"];
@@ -287,6 +342,8 @@ describe("POST /api/generate — clarifying questions", () => {
     invoke.mockResolvedValue({ result: RESULT });
     checkRateLimit.mockReset();
     checkRateLimit.mockResolvedValue({ allowed: true });
+    validateEnv.mockReset();
+    validateEnv.mockReturnValue({ ok: true, missing: [] });
     recordRunTrace.mockReset();
     recordRunTrace.mockResolvedValue(undefined);
     appendRunTrace.mockReset();

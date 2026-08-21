@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "tsx scripts/migrate.ts || echo 'Migration step failed — continuing build, but check logs.'; next build",
+    "vercel-build": "tsx scripts/migrate.ts || echo 'Migration step failed — continuing build, but check logs.'; tsx scripts/index-docs.ts || echo 'Doc indexing step failed — continuing build, but check logs.'; next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p .",

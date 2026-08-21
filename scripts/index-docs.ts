@@ -12,8 +12,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getDb } from "../lib/db/client";
+import { indexCorpusIfChanged } from "../lib/docs/indexCorpusIfChanged";
 import { embedText } from "../mcp/docs-store/embeddings";
-import { indexCorpus, type CorpusDoc } from "../mcp/docs-store/indexCorpus";
+import type { CorpusDoc } from "../mcp/docs-store/indexCorpus";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const topLevelDocs = ["ARCHITECTURE.md", "VISION.md", "README.md"];
@@ -31,8 +32,11 @@ const docs: CorpusDoc[] = await Promise.all(
 );
 
 const db = getDb();
-await db.query("DELETE FROM doc_chunks");
-const count = await indexCorpus(db, embedText, docs);
+const result = await indexCorpusIfChanged(db, embedText, docs);
 
-console.log(`Indexed ${count} chunks from ${docs.length} documents.`);
+console.log(
+  result.skipped
+    ? "Corpus unchanged since the last index — skipped (no embedding calls made)."
+    : `Indexed ${result.chunkCount} chunks from ${docs.length} documents.`,
+);
 process.exit(0);

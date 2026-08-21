@@ -1,6 +1,7 @@
 import { Command } from "@langchain/langgraph";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
+import { validateEnv } from "../../../lib/config/validate";
 import { getCheckpointer } from "../../../lib/db/checkpointer";
 import { buildGraph, type CompiledGraph } from "../../../lib/graph";
 import { withProgressEmitter } from "../../../lib/graph/progress";
@@ -42,6 +43,21 @@ interface GenerateRequestBody {
  *   `result`.
  */
 export async function POST(req: Request): Promise<Response> {
+  // TDD 0013: checked once, at the top, so a misconfigured deployment fails
+  // loudly with every missing var named — not as five identical per-node
+  // failures (0002's graceful degradation, faithfully misapplied to a
+  // config error) and not as the bare platform 500 an unguarded throw from
+  // deeper in the route (e.g. hashIp()'s RATE_LIMIT_IP_SALT check) produces.
+  const envResult = validateEnv();
+  if (!envResult.ok) {
+    return jsonError(
+      `Server is misconfigured — missing required environment variable${
+        envResult.missing.length === 1 ? "" : "s"
+      }: ${envResult.missing.join(", ")}.`,
+      500,
+    );
+  }
+
   let body: GenerateRequestBody;
   try {
     body = (await req.json()) as GenerateRequestBody;
@@ -53,7 +69,12 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 async function startRun(req: Request, body: GenerateRequestBody): Promise<Response> {
-  const rateLimitResult = await checkRateLimit(getClientIp(req));
+  let rateLimitResult;
+  try {
+    rateLimitResult = await checkRateLimit(getClientIp(req));
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : String(error), 500);
+  }
   if (!rateLimitResult.allowed) {
     return rateLimitedResponse(rateLimitResult.retryAfterSeconds);
   }

@@ -122,12 +122,23 @@ reads the data stream directly (`lib/client/parseProgressStream.ts`). The provid
 abstraction claim — one env var, one call site — is real; the "same SDK on both ends"
 claim is real but thinner in practice than the original wording suggested.
 
-**Default model: Claude Haiku 4.5** (`claude-haiku-4-5`). Chosen deliberately over a
-stronger model because this is a public demo, not a production system optimizing for
-output quality — Haiku 4.5 is the cheapest current Claude model ($1/$5 per MTok) and is
-sufficient for the kind of structured generation these sub-agents do. Estimated cost is
-roughly $0.01-0.04 per full demo run (5 sub-agents × 1-3 calls each), cheaper still with
-prompt caching on the shared system prompt.
+**Code default: Claude Haiku 4.5** (`claude-haiku-4-5`, `lib/models/provider.ts`'s fallback
+when `MODEL_PROVIDER`/`MODEL_ID` are unset). Chosen deliberately over a stronger model
+because this is a public demo, not a production system optimizing for output quality —
+Haiku 4.5 is the cheapest current Claude model ($1/$5 per MTok) and is sufficient for the
+kind of structured generation these sub-agents do. Estimated cost is roughly $0.01-0.04 per
+full demo run (5 sub-agents × 1-3 calls each), cheaper still with prompt caching on the
+shared system prompt.
+
+**What actually runs in production: Gemini 3.6 Flash** (`MODEL_PROVIDER=google`,
+`MODEL_ID=gemini-3.6-flash`, set in Vercel — see `.env.example` and §12). Anthropic has no
+free API tier and the Google key is the one available at no cost, so the deployed demo
+runs on the cheapest-sufficient-model reasoning above, applied to a different provider —
+the switch was a config change, not a code change, which is what that reasoning was for.
+This is also the TDD 0013 incident's third root cause: `MODEL_PROVIDER` went unset in
+Vercel for days, so every model call fell back to the Anthropic default against a
+deployment holding only a Google key, and 0002's graceful degradation turned five failed
+nodes into five "unavailable" panels — a *correct* response to a *misconfigured* system.
 
 **Rejected alternative: hardcoding the Anthropic SDK directly in each node.** Rejected
 because it would make "provider-agnostic" a documentation claim rather than something
@@ -526,10 +537,12 @@ just ran the demo shouldn't have to open this document to find that out.
 This document describes the target architecture. The actual build was sequenced as a
 series of Technical Design Documents under [`docs/tdd/`](./docs/tdd), each scoped to be
 implementable standalone, test-first, by a future session without re-deriving the
-decisions above. All twelve have landed; each one's "as built" notes are folded into the
+decisions above. All thirteen have landed; each one's "as built" notes are folded into the
 sections above. 0001-0008 built the system, 0009 reconciled these documents with it,
-0010 and 0011 built the two capabilities 0009 had recorded as deferred, and 0012 fixed the
-one gap none of them had noticed: a completed run's output didn't outlive its browser tab.
+0010 and 0011 built the two capabilities 0009 had recorded as deferred, 0012 fixed the
+one gap none of them had noticed — a completed run's output didn't outlive its browser
+tab — and 0013 fixed the gap none of them could have noticed from the codebase alone: the
+deployed system and the documented one had quietly diverged (§12).
 
 1. [`0001-app-scaffold-and-model-provider.md`](./docs/tdd/0001-app-scaffold-and-model-provider.md)
 2. [`0002-langgraph-core.md`](./docs/tdd/0002-langgraph-core.md)
@@ -543,12 +556,10 @@ one gap none of them had noticed: a completed run's output didn't outlive its br
 10. [`0010-clarifying-questions.md`](./docs/tdd/0010-clarifying-questions.md)
 11. [`0011-eval-harness.md`](./docs/tdd/0011-eval-harness.md)
 12. [`0012-durable-results.md`](./docs/tdd/0012-durable-results.md)
+13. [`0013-production-hardening.md`](./docs/tdd/0013-production-hardening.md)
 
 Queued, not yet built:
 
-13. [`0013-production-hardening.md`](./docs/tdd/0013-production-hardening.md) —
-    partially landed; the deployment-configuration gaps it documents are what
-    made the demo return five empty panels in production.
 14. [`0014-chat-style-ui.md`](./docs/tdd/0014-chat-style-ui.md) — the page
     becomes a conversational thread plus a workspace panel, matching the
     turn-taking interaction 0010 actually built.
@@ -561,3 +572,67 @@ Queued, not yet built:
 17. [`0017-web-search-fallback.md`](./docs/tdd/0017-web-search-fallback.md) —
     a relevance floor (which is what makes "no grounding found" a state that
     can exist at all) plus a web-search fallback for when it isn't cleared.
+
+---
+
+## 12. Operations
+
+**Decision: the system as deployed is documented separately from the system as
+designed, because TDD 0013 exists to record the gap between those two turning out to be
+real.** Every section above describes what the code does; this section describes what has
+to be *set*, in Vercel, for that code to run at all — the deployment failed for days on a
+visitor-facing 500 for exactly the reason a codebase-only document can't catch: `.env.example`
+documented every required var, and every layer that needed one threw a clear message when it
+was missing, but "clear message" meant a serverless log nobody was reading, on a page that
+had already rendered.
+
+**Required environment variables**, checked in one place (`lib/config/validate.ts`,
+called at the top of `POST /api/generate`) rather than discovered one throw at a time:
+
+| Variable | Required when | Used by |
+|---|---|---|
+| `DATABASE_URL` | Always | `lib/db/client.ts` — migrations, checkpointing, every MCP table, rate limiting, stored results |
+| `RATE_LIMIT_IP_SALT` | Always | `lib/rate-limit/hashIp.ts` — hashes visitor IPs before they're ever persisted (§6) |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Whichever one matches `MODEL_PROVIDER` (default `anthropic`) | `lib/models/provider.ts` (§2) |
+| `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Whichever one matches `EMBEDDING_PROVIDER` (default `google`) — independently of `MODEL_PROVIDER`, since Anthropic has no embeddings API | `mcp/docs-store/embeddings.ts` (§3) |
+| `MODEL_PROVIDER` / `MODEL_ID` | Optional; defaults to `anthropic`/`claude-haiku-4-5` | Whichever provider actually runs (§2) — the deployed value is `google`/`gemini-3.6-flash` |
+| `EMBEDDING_PROVIDER` | Optional; defaults to `google` | `mcp/docs-store/embeddings.ts` |
+| `GITHUB_TOKEN` | Optional but recommended | `mcp/analytics` — unauthenticated GitHub is 60 req/hr, comfortably inside the 1-hour cache TTL (§3) without it |
+| `GITHUB_DEMO_REPO`, `RATE_LIMIT_MAX_RUNS_PER_HOUR`, `JUDGE_PROVIDER`, `JUDGE_MODEL_ID` | Optional | Have code defaults or are read only by `npm run eval`, never by a visitor request |
+
+**Provisioning a fresh deployment:**
+
+1. Create a Neon Postgres database and set `DATABASE_URL`.
+2. Set `RATE_LIMIT_IP_SALT` to a random secret (any string; it's an HMAC key, not a
+   password anyone types).
+3. Set `MODEL_PROVIDER`/`MODEL_ID` and the matching API key (§2 — pick the provider whose
+   key is actually available; Anthropic has no free tier).
+4. Set `EMBEDDING_PROVIDER` and its matching key, if different from step 3.
+5. Deploy. The `vercel-build` hook (`package.json`) runs `scripts/migrate.ts` (applies
+   `migrations/*.sql`, sets up the checkpointer tables) and then `scripts/index-docs.ts`
+   (chunks and embeds this repo's own docs into `doc_chunks`, skipping the embedding calls
+   entirely if the corpus hash hasn't changed since the last deploy — TDD 0013) before
+   `next build` runs. Both steps log a warning and let the build continue on failure,
+   rather than blocking a deploy on a transient DB hiccup — worth revisiting if that
+   discipline ever masks a real schema problem instead.
+6. Verify with `GET /api/health` (below) rather than by clicking around the demo and
+   guessing why a panel is empty.
+
+**Verifying a deployment: `GET /api/health`** (`app/api/health/route.ts`,
+`lib/health/check.ts`). Reports env validity (every missing var, not just the first),
+Postgres reachability, whether `doc_chunks` is populated (distinguishing an unindexed
+corpus from one that's reachable but genuinely empty), and the resolved model/embedding
+provider — no secrets in the response, no graph run, no rate-limit unit consumed. Returns
+`200` when everything above is wired correctly and `503` otherwise. This is the one
+`curl` that would have turned TDD 0013's multi-day, three-cause incident into an
+immediate, specific diagnosis.
+
+**What still isn't covered.** Error tracking / structured logging (Sentry or equivalent)
+— `console.error` is the whole story today, which is a real gap for a system whose §7 is
+about observability. Deferred deliberately (TDD 0013): it's a dependency and an account to
+provision, and the health endpoint plus the error/not-found boundaries below cover this
+phase's actual failure modes. A bad `/run/[runId]` UUID renders its own empty state
+(`app/run/[runId]/page.tsx` — a deliberate design choice, not a 404); any genuinely
+unmatched route or uncaught render throw now renders this app's own `app/not-found.tsx` /
+`app/error.tsx` instead of Next's default page, deliberately styled with existing tokens
+and left plain for 0014 to restyle.
