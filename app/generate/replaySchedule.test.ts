@@ -61,6 +61,28 @@ describe("buildReplaySchedule", () => {
 
     expect(schedule.steps.map((step) => step.node)).toEqual(["supervisor", "prdAgent"]);
   });
+
+  it("gives every node a real, visible duration even when one node's real latency is a huge outlier", () => {
+    // A single slow model/MCP call (very plausible in production) used to
+    // dominate a linear real-latency scale, rounding every other node's
+    // duration down to ~0ms — the whole graph would read as already
+    // finished on the first animation frame instead of animating.
+    const nodes: NodeTrace[] = [
+      { node: "supervisor", latencyMs: 50, mcpCalls: [] },
+      { node: "prdAgent", latencyMs: 120_000, mcpCalls: [] }, // one very slow model call
+      { node: "userStoryAgent", latencyMs: 40, mcpCalls: [] },
+      { node: "architectureReviewAgent", latencyMs: 40, mcpCalls: [] },
+      { node: "experimentDesignAgent", latencyMs: 40, mcpCalls: [] },
+      { node: "roadmapAgent", latencyMs: 30, mcpCalls: [] },
+      { node: "assembler", latencyMs: 5, mcpCalls: [] },
+    ];
+
+    const schedule = buildReplaySchedule(nodes);
+
+    for (const step of schedule.steps) {
+      expect(step.endMs - step.startMs).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("viewStateAtElapsed", () => {
