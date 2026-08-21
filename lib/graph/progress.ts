@@ -8,6 +8,7 @@ export type GraphNodeName =
   | "supervisor"
   | "clarificationGate"
   | "prdAgent"
+  | "prdApprovalGate"
   | "userStoryAgent"
   | "architectureReviewAgent"
   | "experimentDesignAgent"

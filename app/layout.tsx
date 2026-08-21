@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Analytics } from "@vercel/analytics/next";
 
+import { displayFont, monoFont, sansFont } from "./fonts";
+import { themeInitScript } from "./theme/themeScript";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +14,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${displayFont.variable} ${sansFont.variable} ${monoFont.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>
         {children}
         <Analytics />

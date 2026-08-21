@@ -10,7 +10,7 @@ describe("viewStateFromEvents", () => {
 
     const supervisor = view.nodes.find((node) => node.name === "supervisor");
     expect(supervisor?.state).toBe("pending");
-    expect(view.nodes).toHaveLength(8);
+    expect(view.nodes).toHaveLength(9);
   });
 
   it("marks a node running, then completed, as its node-status events arrive", () => {

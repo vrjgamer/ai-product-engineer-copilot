@@ -60,12 +60,19 @@ const overwriteWith = <T>(initial: () => T) => ({
  * `clarificationGate`; `clarifications` is written by the gate once the user
  * answers and read by `prdAgent` (TDD 0010). Both default to empty, so the
  * unclarified path — the common one — carries no extra state.
+ *
+ * `prdApproved`/`prdFeedback` are written by `prdApprovalGate` once the user
+ * responds: approving routes to the fan-out, feedback routes back to
+ * `prdAgent` for a revised draft (which lands at the gate again). `prdAgent`
+ * reads `prdFeedback` back to fold a revision request into its prompt.
  */
 export const GraphAnnotation = Annotation.Root({
   request: Annotation<string>,
   clarifyingQuestions: Annotation<string[]>(overwriteWith<string[]>(() => [])),
   clarifications: Annotation<Clarification[]>(overwriteWith<Clarification[]>(() => [])),
   prd: Annotation<PrdOutput | null>(overwrite<PrdOutput | null>()),
+  prdApproved: Annotation<boolean>(overwriteWith<boolean>(() => false)),
+  prdFeedback: Annotation<string | null>(overwrite<string | null>()),
   userStories: Annotation<UserStoryOutput | null>(overwrite<UserStoryOutput | null>()),
   architectureReview: Annotation<ArchitectureReviewOutput | null>(
     overwrite<ArchitectureReviewOutput | null>(),

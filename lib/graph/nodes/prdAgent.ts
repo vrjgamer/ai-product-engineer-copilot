@@ -24,6 +24,14 @@ export async function prdAgent(state: GraphState): Promise<GraphStateUpdate> {
     // propagates them through the whole graph.
     const clarifications = formatClarifications(state.clarifications);
     if (clarifications) promptParts.push(clarifications);
+    // TDD (PRD approval loop): a draft sent back from `prdApprovalGate`
+    // lands here as feedback on the *previous* draft, not a fresh
+    // instruction — folded in only on a revision pass.
+    if (state.prdFeedback) {
+      promptParts.push(
+        `A previous draft of this PRD was sent back for revision with this feedback:\n${state.prdFeedback}`,
+      );
+    }
     const docsContext = docs.value ? formatDocsContext(docs.value) : "";
     if (docsContext) promptParts.push(docsContext);
 

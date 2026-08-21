@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import type { ProgressEvent } from "../../lib/graph/progress";
 import type { AssembledResult } from "../../lib/graph/state";
 import type { StreamEvent } from "../../lib/graph/streamProtocol";
@@ -14,7 +12,13 @@ function isProgressEvent(event: StreamEvent): event is ProgressEvent {
   return event.type === "node-status" || event.type === "mcp-call";
 }
 
-export type RunStatus = "idle" | "running" | "awaiting-clarification" | "done" | "error";
+export type RunStatus =
+  | "idle"
+  | "running"
+  | "awaiting-clarification"
+  | "awaiting-prd-approval"
+  | "done"
+  | "error";
 
 export interface RunViewProps {
   status: RunStatus;
@@ -31,14 +35,17 @@ export interface RunViewProps {
   onAnswer?: (answers: string[]) => void;
   /** The questions and answers from a clarification exchange this run already resolved (TDD 0014), rendered as a Q&A turn pair. */
   answeredQuestions?: AnsweredQuestions | null;
+  /** The drafted PRD awaiting approval — set exactly when `status` is `awaiting-prd-approval`. */
+  prdDraft?: string | null;
+  /** Approves the drafted PRD (continues to the fan-out) or sends it back with feedback (loops to a revised draft). */
+  onResolvePrdApproval?: (approved: boolean, feedback?: string) => void;
 }
 
 /**
- * The chat-style layout this app's single run renders into (TDD 0014): a
- * conversational thread on the left, and a workspace panel on the right
- * holding the deliverables. Above ~900px they sit side by side (handled in
- * CSS); below, a Chat/Result toggle switches between them, mirroring
- * claude.ai's own mobile behaviour. Pure props in, no fetch of its own — the
+ * The chat-style layout this app's single run renders into: the thread,
+ * then the workspace panel, stacked full-width — the same single-column
+ * shape `/run/[runId]` uses, rather than a two-pane split with its own
+ * responsive breakpoint. Pure props in, no fetch of its own — the
  * orchestrator in `app/page.tsx` owns the network calls and feeds this
  * component the accumulated events.
  */
@@ -52,9 +59,9 @@ export function RunView({
   questions = [],
   onAnswer,
   answeredQuestions = null,
+  prdDraft = null,
+  onResolvePrdApproval,
 }: RunViewProps) {
-  const [mobileView, setMobileView] = useState<"chat" | "result">("chat");
-
   if (status === "idle") {
     return (
       <Thread
@@ -68,52 +75,25 @@ export function RunView({
   }
 
   return (
-    <div className="layout" data-testid="run-view">
-      <div className="mobile-toggle" data-testid="mobile-toggle">
-        <button
-          className="mobile-toggle-btn"
-          type="button"
-          data-testid="mobile-toggle-chat"
-          aria-pressed={mobileView === "chat"}
-          onClick={() => setMobileView("chat")}
-        >
-          Chat
-        </button>
-        <button
-          className="mobile-toggle-btn"
-          type="button"
-          data-testid="mobile-toggle-result"
-          aria-pressed={mobileView === "result"}
-          onClick={() => setMobileView("result")}
-        >
-          Result
-        </button>
-      </div>
+    <div className="run-stack" data-testid="run-view">
+      <Thread
+        status={status}
+        requestText={requestText}
+        events={events}
+        questions={questions}
+        onAnswer={onAnswer}
+        answeredQuestions={answeredQuestions}
+        fatalError={fatalError}
+        prdDraft={prdDraft}
+        onResolvePrdApproval={onResolvePrdApproval}
+      />
 
-      <div className="thread-pane" data-testid="thread-pane" data-mobile-hidden={mobileView !== "chat"}>
-        <Thread
-          status={status}
-          requestText={requestText}
-          events={events}
-          questions={questions}
-          onAnswer={onAnswer}
-          answeredQuestions={answeredQuestions}
-          fatalError={fatalError}
-        />
-      </div>
-
-      <div
-        className="workspace-pane"
-        data-testid="workspace-pane"
-        data-mobile-hidden={mobileView !== "result"}
-      >
-        <WorkspacePanel
-          status={status}
-          result={result}
-          runId={runId}
-          graph={<LiveGraphPanel events={events.filter(isProgressEvent)} aborted={status === "error"} />}
-        />
-      </div>
+      <WorkspacePanel
+        status={status}
+        result={result}
+        runId={runId}
+        graph={<LiveGraphPanel events={events.filter(isProgressEvent)} aborted={status === "error"} />}
+      />
     </div>
   );
 }

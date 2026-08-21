@@ -25,6 +25,7 @@ interface GenerateRequestBody {
   input?: unknown;
   runId?: unknown;
   answers?: unknown;
+  prdApproval?: unknown;
 }
 
 /**
@@ -36,11 +37,14 @@ interface GenerateRequestBody {
  * 0002's graceful-degradation contract) travel inside that final result
  * rather than being treated as a run failure.
  *
- * Two request shapes (TDD 0010), because a run can pause:
+ * Three request shapes, because a run can pause at either of two gates:
  * - `{ input }` starts a run on a fresh thread.
- * - `{ runId, answers }` resumes one parked at `clarificationGate`, which
- *   ended its first leg with a `clarification-request` event instead of a
- *   `result`.
+ * - `{ runId, answers }` resumes one parked at `clarificationGate` (TDD
+ *   0010), which ended its leg with a `clarification-request` event.
+ * - `{ runId, prdApproval: { approved, feedback? } }` resumes one parked at
+ *   `prdApprovalGate`, which ended its leg with a `prd-approval-request`
+ *   event. Approving continues to the fan-out; feedback loops back to
+ *   `prdAgent` for a revised draft, which pauses here again.
  */
 export async function POST(req: Request): Promise<Response> {
   // TDD 0013: checked once, at the top, so a misconfigured deployment fails
@@ -107,10 +111,13 @@ async function resumeRun(body: GenerateRequestBody): Promise<Response> {
     return jsonError('Request body\'s "runId" must be a non-empty string.', 400);
   }
 
-  if (!Array.isArray(body.answers) || body.answers.some((answer) => typeof answer !== "string")) {
-    return jsonError('Request body must include an "answers" array of strings.', 400);
+  const resumeValue = parseResumeValue(body);
+  if (resumeValue === undefined) {
+    return jsonError(
+      'Request body must include an "answers" array of strings or a "prdApproval" object with a boolean "approved".',
+      400,
+    );
   }
-  const answers = body.answers as string[];
 
   const config = { configurable: { thread_id: runId } };
   let paused: boolean;
@@ -131,10 +138,36 @@ async function resumeRun(body: GenerateRequestBody): Promise<Response> {
     return jsonError("That run isn't waiting for answers — start a new one.", 409);
   }
 
-  return streamRun(runId, (graph) => graph.invoke(new Command({ resume: answers }), config), {
+  return streamRun(runId, (graph) => graph.invoke(new Command({ resume: resumeValue }), config), {
     resumed: true,
     request,
   });
+}
+
+/**
+ * Which gate a resume is answering is implicit in which key the client
+ * sends — it already knows, since it's responding to the specific
+ * `clarification-request`/`prd-approval-request` event it received. `answers`
+ * is passed through to `clarificationGate`'s `interrupt()` call as-is (it
+ * does its own defensive parsing); `prdApproval` is validated here since
+ * `prdApprovalGate` trusts `approved` to be a real boolean.
+ */
+function parseResumeValue(body: GenerateRequestBody): unknown {
+  if (Array.isArray(body.answers) && body.answers.every((answer) => typeof answer === "string")) {
+    return body.answers;
+  }
+
+  if (body.prdApproval && typeof body.prdApproval === "object") {
+    const approval = body.prdApproval as { approved?: unknown; feedback?: unknown };
+    if (typeof approval.approved === "boolean") {
+      return {
+        approved: approval.approved,
+        ...(typeof approval.feedback === "string" ? { feedback: approval.feedback } : {}),
+      };
+    }
+  }
+
+  return undefined;
 }
 
 interface StreamRunOptions {
@@ -228,22 +261,24 @@ interface InterruptedState {
  * LangGraph reports a pause by returning normally with an `__interrupt__`
  * entry on the state rather than by throwing, so "did this leg finish or is
  * it waiting on the user?" is a question about the returned value, not about
- * control flow.
+ * control flow. Each gate tags its interrupt payload with a `type`
+ * discriminant so a run with two possible pause points doesn't need two
+ * different shape-sniffing heuristics.
  */
 function terminalEvent(runId: string, finalState: unknown): StreamEvent {
   const state = (finalState ?? {}) as InterruptedState;
 
-  const questions = state.__interrupt__?.flatMap((entry) => {
-    const value = entry.value as { questions?: unknown } | undefined;
-    return Array.isArray(value?.questions) ? (value.questions as unknown[]) : [];
-  });
+  for (const entry of state.__interrupt__ ?? []) {
+    const value = entry.value as { type?: string; questions?: unknown; prd?: unknown } | undefined;
 
-  if (questions && questions.length > 0) {
-    return {
-      type: "clarification-request",
-      runId,
-      questions: questions.filter((question): question is string => typeof question === "string"),
-    };
+    if (value?.type === "clarification" && Array.isArray(value.questions)) {
+      const questions = value.questions.filter((question): question is string => typeof question === "string");
+      if (questions.length > 0) return { type: "clarification-request", runId, questions };
+    }
+
+    if (value?.type === "prd-approval" && typeof value.prd === "string") {
+      return { type: "prd-approval-request", runId, prd: value.prd };
+    }
   }
 
   return state.result

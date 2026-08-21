@@ -333,7 +333,10 @@ describe("POST /api/generate — config guard", () => {
 /** TDD 0010: the run can end a leg by asking instead of by finishing, and be resumed with the answers. */
 describe("POST /api/generate — clarifying questions", () => {
   const QUESTIONS = ["Who is this for?", "What metric does it move?"];
-  const PAUSED_STATE = { result: null, __interrupt__: [{ value: { questions: QUESTIONS } }] };
+  const PAUSED_STATE = {
+    result: null,
+    __interrupt__: [{ value: { type: "clarification", questions: QUESTIONS } }],
+  };
 
   beforeEach(() => {
     buildGraph.mockClear();
@@ -352,7 +355,7 @@ describe("POST /api/generate — clarifying questions", () => {
     recordRunResult.mockResolvedValue(undefined);
     getState.mockReset();
     getState.mockResolvedValue({
-      tasks: [{ interrupts: [{ value: { questions: QUESTIONS } }] }],
+      tasks: [{ interrupts: [{ value: { type: "clarification", questions: QUESTIONS } }] }],
       values: { request: "an app" },
     });
   });

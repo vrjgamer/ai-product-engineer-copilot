@@ -13,14 +13,16 @@ import type { AssembledResult } from "./state";
  *
  * A run can also end a leg without a result: `clarification-request` (TDD
  * 0010) means the graph paused at `clarificationGate` and is waiting on
- * answers. Its `runId` is the thread the client posts those answers back
- * against, which is why the ID travels on this event too rather than only on
- * `result`.
+ * answers, and `prd-approval-request` means it paused at `prdApprovalGate`
+ * waiting on approval (or revision feedback) for the drafted PRD. Both carry
+ * `runId` — the thread the client posts its response back against — for the
+ * same reason `result` does.
  */
 export type StreamEvent =
   | ProgressEvent
   | { type: "result"; result: AssembledResult; runId: string }
   | { type: "clarification-request"; runId: string; questions: string[] }
+  | { type: "prd-approval-request"; runId: string; prd: string }
   | { type: "fatal-error"; message: string };
 
 /**

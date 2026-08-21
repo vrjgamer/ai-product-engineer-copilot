@@ -28,6 +28,7 @@ export const NODE_TOOLS: Record<GraphNodeName, string[]> = {
   supervisor: [],
   clarificationGate: [],
   prdAgent: ["search_docs"],
+  prdApprovalGate: [],
   userStoryAgent: ["search_docs"],
   architectureReviewAgent: ["search_docs", "get_repo_stats"],
   experimentDesignAgent: [],
@@ -35,18 +36,25 @@ export const NODE_TOOLS: Record<GraphNodeName, string[]> = {
   assembler: [],
 };
 
-/** The graph's fixed edges (`lib/graph/index.ts`) — the only conditional one is the supervisor's routing decision to `clarificationGate` vs `prdAgent`. */
-export const GRAPH_EDGES: { from: GraphNodeName; to: GraphNodeName; conditional?: boolean }[] = [
-  { from: "supervisor", to: "clarificationGate", conditional: true },
-  { from: "supervisor", to: "prdAgent", conditional: true },
-  { from: "clarificationGate", to: "prdAgent" },
-  { from: "prdAgent", to: "userStoryAgent" },
-  { from: "prdAgent", to: "architectureReviewAgent" },
-  { from: "prdAgent", to: "experimentDesignAgent" },
-  { from: "userStoryAgent", to: "roadmapAgent" },
-  { from: "architectureReviewAgent", to: "roadmapAgent" },
-  { from: "experimentDesignAgent", to: "roadmapAgent" },
-  { from: "roadmapAgent", to: "assembler" },
+/**
+ * The graph's fixed edges (`lib/graph/index.ts`). Two conditional points:
+ * the supervisor's routing decision (`clarificationGate` vs `prdAgent`), and
+ * `prdApprovalGate`'s (revise, looping back to `prdAgent`, vs approve,
+ * continuing to the fan-out) — the graph's one cycle.
+ */
+export const GRAPH_EDGES: { from: GraphNodeName; to: GraphNodeName; conditional?: boolean; label: string }[] = [
+  { from: "supervisor", to: "clarificationGate", conditional: true, label: "unclear" },
+  { from: "supervisor", to: "prdAgent", conditional: true, label: "clear enough" },
+  { from: "clarificationGate", to: "prdAgent", label: "answered" },
+  { from: "prdAgent", to: "prdApprovalGate", label: "PRD draft" },
+  { from: "prdApprovalGate", to: "prdAgent", conditional: true, label: "revise" },
+  { from: "prdApprovalGate", to: "userStoryAgent", conditional: true, label: "approved" },
+  { from: "prdApprovalGate", to: "architectureReviewAgent", conditional: true, label: "approved" },
+  { from: "prdApprovalGate", to: "experimentDesignAgent", conditional: true, label: "approved" },
+  { from: "userStoryAgent", to: "roadmapAgent", label: "user stories" },
+  { from: "architectureReviewAgent", to: "roadmapAgent", label: "arch review" },
+  { from: "experimentDesignAgent", to: "roadmapAgent", label: "experiment design" },
+  { from: "roadmapAgent", to: "assembler", label: "roadmap" },
 ];
 
 function emptyNodes(): GraphNodeView[] {

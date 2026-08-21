@@ -33,7 +33,7 @@ describe("RunView", () => {
     expect(screen.queryByTestId("run-view")).toBeNull();
   });
 
-  it("running: renders the thread and workspace panel side by side, no result yet", () => {
+  it("running: renders the thread above the workspace panel, no result yet", () => {
     render(
       <RunView
         status="running"
@@ -45,9 +45,16 @@ describe("RunView", () => {
       />,
     );
 
-    expect(screen.getByTestId("thread")).toBeTruthy();
-    expect(screen.getByTestId("workspace-panel")).toBeTruthy();
+    const runView = screen.getByTestId("run-view");
+    const thread = screen.getByTestId("thread");
+    const workspace = screen.getByTestId("workspace-panel");
+    expect(thread).toBeTruthy();
+    expect(workspace).toBeTruthy();
     expect(screen.queryByTestId("result-view")).toBeNull();
+    // The thread comes before the workspace panel in document order — a
+    // single stacked column, not a side-by-side split.
+    expect(runView.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(thread.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("done: the workspace panel shows the result", () => {
@@ -100,33 +107,6 @@ describe("RunView", () => {
     expect(thread.querySelector('[data-testid="clarification-form"]')).toBeTruthy();
     const workspace = screen.getByTestId("workspace-panel");
     expect(workspace.querySelector('[data-testid="clarification-form"]')).toBeNull();
-  });
-
-  it("below the breakpoint, a Chat/Result toggle switches which pane is visible", () => {
-    render(
-      <RunView
-        status="done"
-        requestText="A todo app"
-        events={[]}
-        result={FULL_RESULT}
-        questions={[]}
-        answeredQuestions={null}
-      />,
-    );
-
-    // Chat is the default view.
-    expect(screen.getByTestId("thread-pane").getAttribute("data-mobile-hidden")).toBe("false");
-    expect(screen.getByTestId("workspace-pane").getAttribute("data-mobile-hidden")).toBe("true");
-
-    fireEvent.click(screen.getByTestId("mobile-toggle-result"));
-
-    expect(screen.getByTestId("thread-pane").getAttribute("data-mobile-hidden")).toBe("true");
-    expect(screen.getByTestId("workspace-pane").getAttribute("data-mobile-hidden")).toBe("false");
-
-    fireEvent.click(screen.getByTestId("mobile-toggle-chat"));
-
-    expect(screen.getByTestId("thread-pane").getAttribute("data-mobile-hidden")).toBe("false");
-    expect(screen.getByTestId("workspace-pane").getAttribute("data-mobile-hidden")).toBe("true");
   });
 
   it("error: shows a fatal-error turn in the thread instead of a result", () => {

@@ -51,6 +51,8 @@ function baseState(overrides: Partial<GraphState> = {}): GraphState {
     clarifyingQuestions: [],
     clarifications: [],
     prd: null,
+    prdApproved: false,
+    prdFeedback: null,
     userStories: null,
     architectureReview: null,
     experimentDesign: null,

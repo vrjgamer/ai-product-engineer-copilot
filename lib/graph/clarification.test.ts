@@ -99,10 +99,13 @@ describe("clarifying questions (TDD 0010)", () => {
     const graph = clarifyingGraph();
     await graph.invoke({ request: "an app" }, config("resumed"));
 
-    const state = await graph.invoke(
+    const afterAnswers = await graph.invoke(
       new Command({ resume: ["Freelance designers", "Weekly active projects"] }),
       config("resumed"),
     );
+    // Answering clarification pauses again, at prdApprovalGate.
+    expect(afterAnswers.result).toBeNull();
+    const state = await graph.invoke(new Command({ resume: { approved: true } }), config("resumed"));
 
     expect(state.result).not.toBeNull();
     expect(state.clarifications).toEqual([
@@ -139,7 +142,8 @@ describe("clarifying questions (TDD 0010)", () => {
     const graph = clarifyingGraph();
     await graph.invoke({ request: "an app" }, config("skipped"));
 
-    const state = await graph.invoke(new Command({ resume: ["", "   "] }), config("skipped"));
+    await graph.invoke(new Command({ resume: ["", "   "] }), config("skipped"));
+    const state = await graph.invoke(new Command({ resume: { approved: true } }), config("skipped"));
 
     expect(state.result).not.toBeNull();
     // Blank answers are dropped rather than passed through as empty strings —
@@ -160,13 +164,17 @@ describe("clarifying questions (TDD 0010)", () => {
     expect(state.clarifications).toEqual([{ question: QUESTIONS[1], answer: "Weekly retention" }]);
   });
 
-  it("runs straight through without pausing when the supervisor asks nothing", async () => {
+  it("runs straight through without pausing at clarificationGate when the supervisor asks nothing", async () => {
     generateText.mockImplementation(respondWith("[]"));
 
     const graph = clarifyingGraph();
-    const state = await graph.invoke({ request: "A very specific app" }, config("unclarified"));
+    const paused = await graph.invoke({ request: "A very specific app" }, config("unclarified"));
 
-    expect(interruptQuestions(state)).toEqual([]);
+    expect(interruptQuestions(paused)).toEqual([]);
+    // Still pauses once — at prdApprovalGate, which every run hits.
+    expect(paused.result).toBeNull();
+    const state = await graph.invoke(new Command({ resume: { approved: true } }), config("unclarified"));
+
     expect(state.result).not.toBeNull();
     expect(state.clarifications).toEqual([]);
   });
@@ -178,7 +186,8 @@ describe("clarifying questions (TDD 0010)", () => {
     });
 
     const graph = clarifyingGraph();
-    const state = await graph.invoke({ request: "an app" }, config("triage-failed"));
+    await graph.invoke({ request: "an app" }, config("triage-failed"));
+    const state = await graph.invoke(new Command({ resume: { approved: true } }), config("triage-failed"));
 
     // Degrades to v1 behaviour rather than stalling the run, but says so.
     expect(state.result).not.toBeNull();

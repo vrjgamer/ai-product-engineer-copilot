@@ -3,6 +3,7 @@ import type { RunResult } from "../../lib/results/record";
 import type { RunTrace } from "../../lib/tracing/record";
 import { ReplayGraphPanel } from "../generate/ReplayGraphPanel";
 import { WorkspacePanel } from "../generate/WorkspacePanel";
+import { ThemeToggle } from "../theme/ThemeToggle";
 import { QualitySection } from "./QualitySection";
 
 export interface StoredRunViewProps {
@@ -17,11 +18,13 @@ export interface StoredRunViewProps {
 
 /**
  * A finished run's permalink (TDD 0012, absorbing the trace page in TDD
- * 0015): the same chat-thread-plus-workspace layout the live run uses,
- * fetched instead of streamed. `run` and `trace` are independent rows
+ * 0015; redesigned to a full-width single column rather than the live
+ * page's narrow-thread-plus-panel split — there's no live thread here, just
+ * the request and the outcome). `run` and `trace` are independent rows
  * (0012 deliberately has no FK between them) so either can be absent —
  * a run that failed after producing a trace but before a result, or one
- * whose trace write failed, both render without error.
+ * whose trace write failed, both render without error. Nothing here is
+ * height-capped; the page just scrolls.
  *
  * The deliverables go through the *same* `ResultView` the live run used, so
  * a degraded section (TDD 0002's contract) carries the same warning here
@@ -33,40 +36,36 @@ export function StoredRunView({ runId, run, trace, evaluation }: StoredRunViewPr
 
   return (
     <section className="stored-run" data-testid="stored-run-view">
-      <h1 className="section-title">Saved run</h1>
-
-      <div className="layout">
-        <div className="thread-pane" data-testid="thread-pane">
-          <div className="thread" data-testid="thread">
-            {run ? (
-              <>
-                <div className="chat-turn chat-turn-user" data-testid="chat-turn-request">
-                  <p>{run.request}</p>
-                </div>
-                <p className="stored-run-meta" data-testid="stored-run-created-at">
-                  Generated {run.createdAt}
-                </p>
-              </>
-            ) : (
-              <p className="thread-idle" data-testid="stored-run-no-result">
-                This run&apos;s deliverables weren&apos;t saved — it failed, is still in progress, or
-                predates permalinks. Its trace is still shown below.
-              </p>
-            )}
-          </div>
+      <div className="brand-row">
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true" />
+          <span className="brand-name">AI Product Engineer Copilot</span>
         </div>
-
-        <div className="workspace-pane" data-testid="workspace-pane">
-          <WorkspacePanel
-            status="done"
-            result={run?.result ?? null}
-            runId={runId}
-            graph={
-              trace ? <ReplayGraphPanel traceNodes={trace.nodes} erroredNodes={erroredNodes} /> : undefined
-            }
-          />
-        </div>
+        <ThemeToggle />
       </div>
+
+      {run ? (
+        <div className="card stored-run-request-card" data-testid="thread">
+          <div className="chat-turn chat-turn-user" data-testid="chat-turn-request">
+            <p>{run.request}</p>
+          </div>
+          <p className="stored-run-meta" data-testid="stored-run-created-at">
+            Generated {run.createdAt}
+          </p>
+        </div>
+      ) : (
+        <p className="thread-idle" data-testid="stored-run-no-result">
+          This run&apos;s deliverables weren&apos;t saved — it failed, is still in progress, or predates
+          permalinks. Its trace is still shown below.
+        </p>
+      )}
+
+      <WorkspacePanel
+        status="done"
+        result={run?.result ?? null}
+        runId={runId}
+        graph={trace ? <ReplayGraphPanel traceNodes={trace.nodes} erroredNodes={erroredNodes} /> : undefined}
+      />
 
       {trace ? (
         <dl className="trace-summary" data-testid="run-stats">

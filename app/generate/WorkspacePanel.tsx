@@ -31,7 +31,11 @@ type WorkspaceTab = "result" | "graph";
  * visitor has to know to go find.
  */
 export function WorkspacePanel({ status, result, runId, graph }: WorkspacePanelProps) {
-  const [tab, setTab] = useState<WorkspaceTab>("result");
+  // A run in progress has nothing to show on Result yet, so Graph opens by
+  // default while it's live; a finished run (this panel's usual state on
+  // /run/[runId], since the live page now navigates away on completion)
+  // opens on Result.
+  const [tab, setTab] = useState<WorkspaceTab>(() => (status === "done" ? "result" : "graph"));
 
   return (
     <div className="workspace" data-testid="workspace-panel">
@@ -51,21 +55,21 @@ export function WorkspacePanel({ status, result, runId, graph }: WorkspacePanelP
           className="tab"
           role="tab"
           type="button"
-          aria-selected={tab === "result"}
-          data-testid="tab-result"
-          onClick={() => setTab("result")}
+          aria-selected={tab === "graph"}
+          data-testid="tab-graph"
+          onClick={() => setTab("graph")}
         >
-          Result
+          LangGraph
         </button>
         <button
           className="tab"
           role="tab"
           type="button"
-          aria-selected={tab === "graph"}
-          data-testid="tab-graph"
-          onClick={() => setTab("graph")}
+          aria-selected={tab === "result"}
+          data-testid="tab-result"
+          onClick={() => setTab("result")}
         >
-          Graph
+          Result
         </button>
       </div>
 
@@ -75,7 +79,7 @@ export function WorkspacePanel({ status, result, runId, graph }: WorkspacePanelP
             <ResultView result={result} />
           ) : (
             <p className="workspace-empty" data-testid="workspace-empty">
-              {status === "running" || status === "awaiting-clarification"
+              {status === "running" || status === "awaiting-clarification" || status === "awaiting-prd-approval"
                 ? "The plan will appear here once the run finishes."
                 : status === "error"
                   ? "The run didn't produce a result."

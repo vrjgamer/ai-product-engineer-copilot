@@ -6,6 +6,7 @@ import { assembler } from "./nodes/assembler";
 import { clarificationGate } from "./nodes/clarificationGate";
 import { experimentDesignAgent } from "./nodes/experimentDesignAgent";
 import { prdAgent } from "./nodes/prdAgent";
+import { prdApprovalGate } from "./nodes/prdApprovalGate";
 import { roadmapAgent } from "./nodes/roadmapAgent";
 import { supervisor } from "./nodes/supervisor";
 import { userStoryAgent } from "./nodes/userStoryAgent";
@@ -49,20 +50,23 @@ export interface BuildGraphOptions {
 }
 
 /**
- * `supervisor -> (clarificationGate ->)? prdAgent -> [userStoryAgent,
- * architectureReviewAgent, experimentDesignAgent] -> roadmapAgent ->
+ * `supervisor -> (clarificationGate ->)? prdAgent -> prdApprovalGate ->
+ * (revise: back to prdAgent | approve: [userStoryAgent,
+ * architectureReviewAgent, experimentDesignAgent]) -> roadmapAgent ->
  * assembler -> END`.
  *
  * See ARCHITECTURE.md §1 for why PRD runs alone before the fan-out, and §9
- * for the clarification pause (TDD 0010) — the supervisor's conditional edge
- * is the graph's one genuinely dynamic routing decision; every other edge is
- * static.
+ * for the clarification pause (TDD 0010). Two conditional edges now: the
+ * supervisor's (whether to pause for clarifying questions at all) and
+ * `prdApprovalGate`'s (approve vs. revise) — the latter is the graph's one
+ * cycle, looping back to `prdAgent` until the user approves.
  */
 export function buildGraph(options: BuildGraphOptions = {}) {
   return new StateGraph(GraphAnnotation)
     .addNode("supervisor", instrumented("supervisor", supervisor))
     .addNode("clarificationGate", instrumented("clarificationGate", clarificationGate))
     .addNode("prdAgent", instrumented("prdAgent", prdAgent))
+    .addNode("prdApprovalGate", instrumented("prdApprovalGate", prdApprovalGate))
     .addNode("userStoryAgent", instrumented("userStoryAgent", userStoryAgent))
     .addNode(
       "architectureReviewAgent",
@@ -75,9 +79,9 @@ export function buildGraph(options: BuildGraphOptions = {}) {
     .addNode("roadmapAgent", instrumented("roadmapAgent", roadmapAgent))
     .addNode("assembler", instrumented("assembler", assembler))
     .addEdge(START, "supervisor")
-    // The one conditional edge in the graph (TDD 0010): pause for answers
-    // only when the supervisor actually produced questions. With none — the
-    // common case — this is the same static hop to `prdAgent` TDD 0002 had.
+    // Pause for answers only when the supervisor actually produced
+    // questions (TDD 0010). With none — the common case — this is the same
+    // static hop to `prdAgent` TDD 0002 had.
     .addConditionalEdges(
       "supervisor",
       (state: GraphState) =>
@@ -85,9 +89,17 @@ export function buildGraph(options: BuildGraphOptions = {}) {
       ["clarificationGate", "prdAgent"],
     )
     .addEdge("clarificationGate", "prdAgent")
-    .addEdge("prdAgent", "userStoryAgent")
-    .addEdge("prdAgent", "architectureReviewAgent")
-    .addEdge("prdAgent", "experimentDesignAgent")
+    .addEdge("prdAgent", "prdApprovalGate")
+    // The graph's one cycle: an unapproved draft routes back to `prdAgent`
+    // for revision rather than forward, looping until the user approves.
+    .addConditionalEdges(
+      "prdApprovalGate",
+      (state: GraphState) =>
+        state.prdApproved
+          ? ["userStoryAgent", "architectureReviewAgent", "experimentDesignAgent"]
+          : ["prdAgent"],
+      ["userStoryAgent", "architectureReviewAgent", "experimentDesignAgent", "prdAgent"],
+    )
     .addEdge("userStoryAgent", "roadmapAgent")
     .addEdge("architectureReviewAgent", "roadmapAgent")
     .addEdge("experimentDesignAgent", "roadmapAgent")

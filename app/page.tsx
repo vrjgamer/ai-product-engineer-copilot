@@ -1,14 +1,15 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
-import type { AssembledResult } from "../lib/graph/state";
 import type { StreamEvent } from "../lib/graph/streamProtocol";
 import { parseProgressStream } from "../lib/client/parseProgressStream";
 import { RunView, type RunStatus } from "./generate/RunView";
 import type { AnsweredQuestions } from "./generate/Thread";
 import { RateLimitNote } from "./RateLimitNote";
+import { ThemeToggle } from "./theme/ThemeToggle";
 import { WhatsNextNote } from "./WhatsNextNote";
 
 const EXAMPLE_PROMPTS = [
@@ -18,36 +19,44 @@ const EXAMPLE_PROMPTS = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<RunStatus>("idle");
   const [requestText, setRequestText] = useState("");
   const [events, setEvents] = useState<StreamEvent[]>([]);
-  const [result, setResult] = useState<AssembledResult | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<string[]>([]);
   const [answeredQuestions, setAnsweredQuestions] = useState<AnsweredQuestions | null>(null);
+  const [prdDraft, setPrdDraft] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   const busy = status === "running";
 
   /**
-   * Consumes one leg of a run's SSE stream (TDD 0005), which can end three
-   * ways: a result, a fatal error, or — since TDD 0010 — a pause with
-   * questions, which leaves the accumulated progress events on screen and
-   * hands off to `answer()` below.
+   * Consumes one leg of a run's SSE stream (TDD 0005), which can end several
+   * ways: a result, a fatal error, a pause with clarifying questions (TDD
+   * 0010), or a pause for PRD approval — which leaves the accumulated
+   * progress events on screen and hands off to `answer()`/
+   * `resolvePrdApproval()` below. A result navigates straight to its
+   * permalink rather than rendering inline here — the live page's job ends
+   * once the run has something durable to show.
    */
   async function consume(body: ReadableStream<Uint8Array>) {
-    let paused = false;
+    let pause: "clarification" | "prd-approval" | null = null;
 
     for await (const event of parseProgressStream(body)) {
       if (event.type === "result") {
-        setResult(event.result);
-        setRunId(event.runId);
+        router.push(`/run/${event.runId}`);
+        return;
       } else if (event.type === "clarification-request") {
-        paused = true;
+        pause = "clarification";
         setRunId(event.runId);
         setQuestions(event.questions);
+      } else if (event.type === "prd-approval-request") {
+        pause = "prd-approval";
+        setRunId(event.runId);
+        setPrdDraft(event.prd);
       } else if (event.type === "fatal-error") {
         setFatalError(event.message);
       } else {
@@ -55,9 +64,12 @@ export default function Home() {
       }
     }
 
-    setStatus((current) =>
-      current !== "running" ? current : paused ? "awaiting-clarification" : "done",
-    );
+    setStatus((current) => {
+      if (current !== "running") return current;
+      if (pause === "clarification") return "awaiting-clarification";
+      if (pause === "prd-approval") return "awaiting-prd-approval";
+      return "done";
+    });
   }
 
   async function post(payload: Record<string, unknown>) {
@@ -99,10 +111,10 @@ export default function Home() {
   function run(text: string) {
     setRequestText(text);
     setEvents([]);
-    setResult(null);
     setRunId(null);
     setQuestions([]);
     setAnsweredQuestions(null);
+    setPrdDraft(null);
     void post({ input: text });
   }
 
@@ -120,6 +132,18 @@ export default function Home() {
     void post({ runId, answers });
   }
 
+  /**
+   * Resolves the PRD-approval pause: approving continues to the fan-out,
+   * feedback sends the run back to `prdAgent` for a revised draft — which
+   * pauses here again with the new `prdDraft`, so no extra "revising…"
+   * state is needed beyond clearing the current one.
+   */
+  function resolvePrdApproval(approved: boolean, feedback?: string) {
+    if (!runId) return;
+    setPrdDraft(null);
+    void post({ runId, prdApproval: feedback ? { approved, feedback } : { approved } });
+  }
+
   function handleSubmit(formEvent: FormEvent) {
     formEvent.preventDefault();
     if (input.trim() && !busy) run(input.trim());
@@ -131,16 +155,17 @@ export default function Home() {
     run(prompt);
   }
 
+  const idle = status === "idle";
+
   return (
     <main className="page">
-      <header className="hero">
-        <h1>AI Product Engineer Copilot</h1>
-        <p className="hero-lede">
-          Describe the product or feature you want a plan for. A multi-agent graph writes the PRD,
-          user stories, architecture review, experiment design, and roadmap.
-        </p>
-        <RateLimitNote />
-      </header>
+      <div className="brand-row">
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true" />
+          <span className="brand-name">AI Product Engineer Copilot</span>
+        </div>
+        <ThemeToggle />
+      </div>
 
       {rateLimitMessage ? (
         <p className="banner" role="alert" data-testid="rate-limit-banner">
@@ -148,48 +173,70 @@ export default function Home() {
         </p>
       ) : null}
 
-      <form className="card composer" onSubmit={handleSubmit}>
-        <textarea
-          value={input}
-          onChange={(changeEvent) => setInput(changeEvent.target.value)}
-          placeholder="Describe the product or feature you want a plan for"
-          rows={4}
+      {/*
+        Landing (composer, examples, the deferred-capabilities note) is the
+        only thing on screen until a run starts — once it does, this whole
+        block disappears rather than lingering above the thread. A finished
+        run navigates to its own permalink instead of returning here, so
+        there's no "complete" state to design for below.
+      */}
+      {idle ? (
+        <>
+          <header className="hero">
+            <h1>AI Product Engineer Copilot</h1>
+            <p className="hero-lede">
+              Describe the product or feature you want a plan for. A multi-agent graph writes the PRD,
+              user stories, architecture review, experiment design, and roadmap.
+            </p>
+            <RateLimitNote />
+          </header>
+
+          <form className="card composer" onSubmit={handleSubmit}>
+            <textarea
+              value={input}
+              onChange={(changeEvent) => setInput(changeEvent.target.value)}
+              placeholder="Describe the product or feature you want a plan for"
+              rows={4}
+            />
+            <div className="composer-actions">
+              <button className="btn-primary" type="submit" disabled={busy || !input.trim()}>
+                {busy ? "Generating…" : "Generate plan"}
+              </button>
+            </div>
+          </form>
+
+          <div className="examples">
+            <span className="examples-label">Or try an example: </span>
+            {EXAMPLE_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                className="chip"
+                type="button"
+                disabled={busy}
+                onClick={() => handleExampleClick(prompt)}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          <WhatsNextNote />
+        </>
+      ) : (
+        <RunView
+          status={status}
+          requestText={requestText}
+          events={events}
+          result={null}
+          fatalError={fatalError}
+          runId={runId}
+          questions={questions}
+          onAnswer={answer}
+          answeredQuestions={answeredQuestions}
+          prdDraft={prdDraft}
+          onResolvePrdApproval={resolvePrdApproval}
         />
-        <div className="composer-actions">
-          <button className="btn-primary" type="submit" disabled={busy || !input.trim()}>
-            {busy ? "Generating…" : "Generate plan"}
-          </button>
-        </div>
-      </form>
-
-      <div className="examples">
-        <span className="examples-label">Or try an example: </span>
-        {EXAMPLE_PROMPTS.map((prompt) => (
-          <button
-            key={prompt}
-            className="chip"
-            type="button"
-            disabled={busy}
-            onClick={() => handleExampleClick(prompt)}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-
-      <RunView
-        status={status}
-        requestText={requestText}
-        events={events}
-        result={result}
-        fatalError={fatalError}
-        runId={runId}
-        questions={questions}
-        onAnswer={answer}
-        answeredQuestions={answeredQuestions}
-      />
-
-      <WhatsNextNote />
+      )}
     </main>
   );
 }

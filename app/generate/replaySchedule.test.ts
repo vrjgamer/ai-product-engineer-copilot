@@ -9,6 +9,7 @@ describe("buildReplaySchedule", () => {
     const nodes: NodeTrace[] = [
       { node: "supervisor", latencyMs: 100, mcpCalls: [] },
       { node: "prdAgent", latencyMs: 900, mcpCalls: [] },
+      { node: "prdApprovalGate", latencyMs: 50, mcpCalls: [] },
       { node: "userStoryAgent", latencyMs: 700, mcpCalls: [] },
       { node: "architectureReviewAgent", latencyMs: 800, mcpCalls: [] },
       { node: "experimentDesignAgent", latencyMs: 600, mcpCalls: [] },
@@ -21,10 +22,11 @@ describe("buildReplaySchedule", () => {
 
     expect(byName.get("supervisor")!.startMs).toBe(0);
     expect(byName.get("prdAgent")!.startMs).toBeGreaterThanOrEqual(byName.get("supervisor")!.endMs);
-    // The fan-out runs simultaneously, all starting when prdAgent ends.
-    expect(byName.get("userStoryAgent")!.startMs).toBe(byName.get("prdAgent")!.endMs);
-    expect(byName.get("architectureReviewAgent")!.startMs).toBe(byName.get("prdAgent")!.endMs);
-    expect(byName.get("experimentDesignAgent")!.startMs).toBe(byName.get("prdAgent")!.endMs);
+    expect(byName.get("prdApprovalGate")!.startMs).toBeGreaterThanOrEqual(byName.get("prdAgent")!.endMs);
+    // The fan-out runs simultaneously, all starting once the PRD is approved.
+    expect(byName.get("userStoryAgent")!.startMs).toBe(byName.get("prdApprovalGate")!.endMs);
+    expect(byName.get("architectureReviewAgent")!.startMs).toBe(byName.get("prdApprovalGate")!.endMs);
+    expect(byName.get("experimentDesignAgent")!.startMs).toBe(byName.get("prdApprovalGate")!.endMs);
     // The join waits for the slowest fan-out branch.
     const fanOutEnd = Math.max(
       byName.get("userStoryAgent")!.endMs,

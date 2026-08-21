@@ -21,8 +21,19 @@ vi.mock("../../mcp/tools", async (importOriginal) => {
   };
 });
 
+import { Command, MemorySaver } from "@langchain/langgraph";
+
 import { buildGraph } from "./index";
 import { withRunTracing } from "../tracing/collect";
+
+/**
+ * `prdApprovalGate` now pauses every run, so a full trace spans two legs —
+ * mirroring how `app/api/generate/route.ts` accumulates `nodes` across a
+ * resumed leg (`appendRunTrace`).
+ */
+function config(threadId: string) {
+  return { configurable: { thread_id: threadId } };
+}
 
 const FIXTURE_REPO_STATS = {
   repo: "vrjgamer/ai-product-engineer-copilot",
@@ -75,15 +86,25 @@ describe("run tracing through a real graph run", () => {
   });
 
   it("produces a NodeTrace per node, in completion order, with each model-calling node's real token counts", async () => {
-    const graph = buildGraph();
-    const { nodes } = await withRunTracing(() => graph.invoke({ request: "Build a todo app" }));
+    const graph = buildGraph({ checkpointer: new MemorySaver() });
+    const cfg = config("tracing-full");
+    const first = await withRunTracing(() => graph.invoke({ request: "Build a todo app" }, cfg));
+    const second = await withRunTracing(() =>
+      graph.invoke(new Command({ resume: { approved: true } }), cfg),
+    );
+    const nodes = [...first.nodes, ...second.nodes];
 
     const order = nodes.map((node) => node.node);
     expect(order[0]).toBe("supervisor");
     expect(order[1]).toBe("prdAgent");
+    // prdApprovalGate is traced twice — once when it interrupts, once when
+    // it resumes and completes — so it appears at the end of the first leg
+    // and the start of the second.
+    expect(order[2]).toBe("prdApprovalGate");
+    expect(order[3]).toBe("prdApprovalGate");
     expect(order[order.length - 2]).toBe("roadmapAgent");
     expect(order[order.length - 1]).toBe("assembler");
-    expect(order).toHaveLength(7);
+    expect(order).toHaveLength(9);
 
     for (const [node, usage] of Object.entries(USAGE_BY_NODE)) {
       const trace = nodes.find((n) => n.node === node)!;
@@ -104,10 +125,13 @@ describe("run tracing through a real graph run", () => {
       return { text: `${node} content`, usage: USAGE_BY_NODE[node] };
     });
 
-    const graph = buildGraph();
-    const { result: finalState, nodes } = await withRunTracing(() =>
-      graph.invoke({ request: "Build a todo app" }),
+    const graph = buildGraph({ checkpointer: new MemorySaver() });
+    const cfg = config("tracing-error");
+    const first = await withRunTracing(() => graph.invoke({ request: "Build a todo app" }, cfg));
+    const { result: finalState, nodes: secondLegNodes } = await withRunTracing(() =>
+      graph.invoke(new Command({ resume: { approved: true } }), cfg),
     );
+    const nodes = [...first.nodes, ...secondLegNodes];
 
     expect(finalState.errors).toEqual([{ node: "userStoryAgent", message: "model unavailable" }]);
     expect(nodes.map((node) => node.node)).toEqual(

@@ -4,6 +4,7 @@ import type { Clarification, GraphState, GraphStateUpdate } from "../state";
 
 /** The payload `interrupt()` surfaces to the route handler, which forwards it as a `clarification-request` stream event. */
 export interface ClarificationRequest {
+  type: "clarification";
   questions: string[];
 }
 
@@ -20,6 +21,7 @@ export interface ClarificationRequest {
  */
 export async function clarificationGate(state: GraphState): Promise<GraphStateUpdate> {
   const answers = interrupt<ClarificationRequest, unknown>({
+    type: "clarification",
     questions: state.clarifyingQuestions,
   });
 

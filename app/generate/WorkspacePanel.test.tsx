@@ -17,14 +17,22 @@ const FULL_RESULT: AssembledResult = {
 };
 
 describe("WorkspacePanel", () => {
-  it("before a result: shows an empty/working state on the Result tab, no result view", () => {
+  it("before a result: opens on the Graph tab by default, since Result has nothing to show yet", () => {
+    render(<WorkspacePanel status="running" result={null} graph={<p data-testid="stub-graph">graph</p>} />);
+
+    expect(screen.getByTestId("stub-graph")).toBeTruthy();
+    expect(screen.queryByTestId("workspace-empty")).toBeNull();
+  });
+
+  it("before a result: the Result tab shows an empty/working state once selected", () => {
     render(<WorkspacePanel status="running" result={null} graph={<p>graph</p>} />);
 
+    fireEvent.click(screen.getByTestId("tab-result"));
     expect(screen.getByTestId("workspace-empty")).toBeTruthy();
     expect(screen.queryByTestId("result-view")).toBeNull();
   });
 
-  it("once a result arrives: shows the result view on the Result tab", () => {
+  it("once a result arrives: opens on the Result tab by default and shows the result view", () => {
     render(<WorkspacePanel status="done" result={FULL_RESULT} graph={<p>graph</p>} />);
 
     expect(screen.getByTestId("result-view")).toBeTruthy();
@@ -43,13 +51,13 @@ describe("WorkspacePanel", () => {
     expect(screen.queryByTestId("run-permalink")).toBeNull();
   });
 
-  it("switches to the Graph tab and renders the supplied graph content", () => {
-    render(<WorkspacePanel status="running" result={null} graph={<p data-testid="stub-graph">the graph</p>} />);
+  it("switches tabs on click", () => {
+    render(<WorkspacePanel status="done" result={FULL_RESULT} graph={<p data-testid="stub-graph">the graph</p>} />);
 
-    expect(screen.queryByTestId("stub-graph")).toBeNull();
+    expect(screen.getByTestId("result-view")).toBeTruthy();
     fireEvent.click(screen.getByTestId("tab-graph"));
     expect(screen.getByTestId("stub-graph")).toBeTruthy();
-    expect(screen.queryByTestId("workspace-empty")).toBeNull();
+    expect(screen.queryByTestId("result-view")).toBeNull();
   });
 
   it("shows a 'no trace' note on the Graph tab when no graph content is supplied", () => {

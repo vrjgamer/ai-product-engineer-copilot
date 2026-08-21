@@ -24,6 +24,8 @@ vi.mock("../../mcp/tools", async (importOriginal) => {
   };
 });
 
+import { Command, MemorySaver } from "@langchain/langgraph";
+
 import { buildGraph } from "./index";
 
 const FIXTURE_REPO_STATS = {
@@ -68,6 +70,23 @@ function nodeNameFor(system: string): string {
   return match[1];
 }
 
+/**
+ * `interrupt()` requires a checkpointer (`prdApprovalGate` now pauses every
+ * run, not just the clarified path), so every test needs one — a fresh
+ * `MemorySaver` per test, same pattern as `clarification.test.ts`.
+ */
+function graphWithCheckpointer() {
+  return buildGraph({ checkpointer: new MemorySaver() });
+}
+
+const CONFIG = { configurable: { thread_id: "index-test-thread" } };
+
+/** Runs a request to the PRD-approval pause, then approves it — the "happy path to completion" every pre-approval-gate test used to reach in one `invoke()`. */
+async function runToCompletion(graph: ReturnType<typeof buildGraph>, request = "Build a todo app") {
+  await graph.invoke({ request }, CONFIG);
+  return graph.invoke(new Command({ resume: { approved: true } }), CONFIG);
+}
+
 describe("buildGraph", () => {
   beforeEach(() => {
     generateText.mockReset();
@@ -88,8 +107,8 @@ describe("buildGraph", () => {
       return { text: CONTENT_BY_NODE[node] };
     });
 
-    const graph = buildGraph();
-    await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    await runToCompletion(graph);
 
     const prdIndex = order.indexOf("prdAgent");
     const fanOutIndices = ["userStoryAgent", "architectureReviewAgent", "experimentDesignAgent"].map(
@@ -107,8 +126,8 @@ describe("buildGraph", () => {
   });
 
   it("passes the PRD produced by prdAgent into all three fan-out nodes' model calls", async () => {
-    const graph = buildGraph();
-    await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    await runToCompletion(graph);
 
     const calls = generateText.mock.calls as [{ system: string; prompt: string }][];
     const fanOutCalls = calls.filter(([{ system }]) =>
@@ -131,8 +150,8 @@ describe("buildGraph", () => {
       return { text: CONTENT_BY_NODE[node] };
     });
 
-    const graph = buildGraph();
-    await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    await runToCompletion(graph);
 
     const roadmapIndex = order.indexOf("roadmapAgent");
     const fanOutNodes = ["userStoryAgent", "architectureReviewAgent", "experimentDesignAgent"];
@@ -144,8 +163,8 @@ describe("buildGraph", () => {
   });
 
   it("assembles all five outputs into a single merged result", async () => {
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.result).toEqual({
       prd: { content: "PRD content" },
@@ -166,8 +185,8 @@ describe("buildGraph", () => {
       return { text: CONTENT_BY_NODE[node] };
     });
 
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.userStories).toBeNull();
     expect(finalState.errors).toEqual([{ node: "userStoryAgent", message: "model unavailable" }]);
@@ -186,8 +205,8 @@ describe("buildGraph", () => {
       return { text: CONTENT_BY_NODE[node] };
     });
 
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.userStories).toBeNull();
     expect(finalState.experimentDesign).toBeNull();
@@ -204,8 +223,8 @@ describe("buildGraph", () => {
   });
 
   it("produces a fully-successful run with all five output fields populated and no errors", async () => {
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.prd).not.toBeNull();
     expect(finalState.userStories).not.toBeNull();
@@ -221,8 +240,8 @@ describe("buildGraph", () => {
     // first call targets prdAgent deterministically.
     searchDocsTool.mockRejectedValueOnce(new Error("docs-store unreachable"));
 
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.prd?.content).toContain("PRD content");
     expect(finalState.prd?.content).toContain("unavailable");
@@ -240,8 +259,8 @@ describe("buildGraph", () => {
     getRepoStatsTool.mockResolvedValueOnce(FIXTURE_REPO_STATS);
     getRepoStatsTool.mockRejectedValueOnce(new Error("GitHub API rate-limited"));
 
-    const graph = buildGraph();
-    const finalState = await graph.invoke({ request: "Build a todo app" });
+    const graph = graphWithCheckpointer();
+    const finalState = await runToCompletion(graph);
 
     expect(finalState.roadmap?.content).toContain("Roadmap content");
     expect(finalState.roadmap?.content).toContain("unavailable");
@@ -249,5 +268,48 @@ describe("buildGraph", () => {
       expect.arrayContaining([{ node: "roadmapAgent", message: "GitHub API rate-limited" }]),
     );
     expect(finalState.result).not.toBeNull();
+  });
+
+  it("pauses at prdApprovalGate with the drafted PRD and no fan-out output yet", async () => {
+    const graph = graphWithCheckpointer();
+    const paused = await graph.invoke({ request: "Build a todo app" }, CONFIG);
+
+    expect(paused.prd).toEqual({ content: "PRD content" });
+    expect(paused.userStories).toBeNull();
+    expect(paused.architectureReview).toBeNull();
+    expect(paused.experimentDesign).toBeNull();
+    expect(paused.result).toBeNull();
+  });
+
+  it("routes back to prdAgent for a revised draft when the PRD is sent back with feedback, instead of continuing to the fan-out", async () => {
+    let prdCalls = 0;
+    generateText.mockImplementation(async ({ system, prompt }: { system: string; prompt: string }) => {
+      const node = nodeNameFor(system);
+      if (node === "prdAgent") {
+        prdCalls += 1;
+        return { text: prdCalls === 1 ? "PRD content" : "Revised PRD content" };
+      }
+      return { text: CONTENT_BY_NODE[node] };
+    });
+
+    const graph = graphWithCheckpointer();
+    await graph.invoke({ request: "Build a todo app" }, CONFIG);
+    const revised = await graph.invoke(
+      new Command({ resume: { approved: false, feedback: "Add a competitive analysis section." } }),
+      CONFIG,
+    );
+
+    expect(prdCalls).toBe(2);
+    expect(revised.prd).toEqual({ content: "Revised PRD content" });
+    expect(revised.userStories).toBeNull();
+    expect(revised.result).toBeNull();
+
+    const secondPrdCall = (generateText.mock.calls as [{ system: string; prompt: string }][])
+      .filter(([{ system }]) => nodeNameFor(system) === "prdAgent")
+      .at(-1);
+    expect(secondPrdCall?.[0].prompt).toContain("Add a competitive analysis section.");
+
+    const finalState = await graph.invoke(new Command({ resume: { approved: true } }), CONFIG);
+    expect(finalState.result?.prd).toEqual({ content: "Revised PRD content" });
   });
 });

@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamEvent } from "../lib/graph/streamProtocol";
 import Home from "./page";
 
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
 afterEach(cleanup);
 
 /** Builds an SSE body in the same `data-progress` wire format app/api/generate/route.ts streams. */
@@ -27,6 +32,7 @@ describe("Home page", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    pushMock.mockClear();
   });
 
   it("shows the proactive rate-limit/model note before any run is started", () => {
@@ -68,7 +74,7 @@ describe("Home page", () => {
     expect(screen.queryByTestId("run-fatal-error")).toBeNull();
   });
 
-  it("shows a shareable permalink pointing at the run id streamed in the result event (TDD 0007/0012)", async () => {
+  it("navigates to the run's permalink once the result event arrives (TDD 0007/0012)", async () => {
     const result = {
       prd: { content: "PRD content" },
       userStories: { content: "User stories content" },
@@ -91,8 +97,28 @@ describe("Home page", () => {
     fireEvent.click(screen.getByText("Generate plan"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("run-permalink").getAttribute("href")).toBe("/run/run-abc");
+      expect(pushMock).toHaveBeenCalledWith("/run/run-abc");
     });
+  });
+
+  it("hides the landing composer once a run starts", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(sseBody([{ type: "node-status", node: "supervisor", status: "running" }]), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
+
+    render(<Home />);
+    fireEvent.change(screen.getByPlaceholderText("Describe the product or feature you want a plan for"), {
+      target: { value: "Build a todo app" },
+    });
+    fireEvent.click(screen.getByText("Generate plan"));
+
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText("Describe the product or feature you want a plan for")).toBeNull();
+    });
+    expect(screen.queryByTestId("whats-next-note")).toBeNull();
   });
 
   /** TDD 0010: the run pauses, the page asks, the answers go back on the same runId. */
@@ -142,7 +168,7 @@ describe("Home page", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it("posts the answers back against the paused run's id and renders the completed result", async () => {
+    it("posts the answers back against the paused run's id and navigates to its permalink", async () => {
       await startPausedRun();
       fetchMock.mockResolvedValueOnce(
         sseResponse([{ type: "result", result: RESULT, runId: "run-abc" }]),
@@ -153,7 +179,7 @@ describe("Home page", () => {
       fireEvent.submit(screen.getByTestId("clarification-form"));
 
       await waitFor(() => {
-        expect(screen.getByTestId("result-view")).toBeTruthy();
+        expect(pushMock).toHaveBeenCalledWith("/run/run-abc");
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -162,7 +188,6 @@ describe("Home page", () => {
         runId: "run-abc",
         answers: ["Freelance designers"],
       });
-      expect(screen.getByTestId("run-permalink").getAttribute("href")).toBe("/run/run-abc");
       expect(screen.queryByTestId("clarification-form")).toBeNull();
     });
 
@@ -178,7 +203,7 @@ describe("Home page", () => {
       fireEvent.click(screen.getByTestId("clarification-skip"));
 
       await waitFor(() => {
-        expect(screen.getByTestId("result-view")).toBeTruthy();
+        expect(pushMock).toHaveBeenCalledWith("/run/run-abc");
       });
 
       // Both legs are one run — the questions the run paused on stay
@@ -199,6 +224,88 @@ describe("Home page", () => {
 
       await waitFor(() => {
         expect(screen.getByTestId("run-fatal-error")).toBeTruthy();
+      });
+    });
+  });
+
+  /** PRD-approval pause: the run stops after drafting the PRD and waits for approval or revision feedback. */
+  describe("PRD approval", () => {
+    const RESULT = {
+      prd: { content: "Revised PRD content" },
+      userStories: { content: "User stories content" },
+      architectureReview: { content: "Architecture review content" },
+      experimentDesign: { content: "Experiment design content" },
+      roadmap: { content: "Roadmap content" },
+      errors: [],
+    };
+
+    function sseResponse(events: StreamEvent[]): Response {
+      return new Response(sseBody(events), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+
+    async function startPrdApprovalRun() {
+      fetchMock.mockResolvedValueOnce(
+        sseResponse([{ type: "prd-approval-request", runId: "run-abc", prd: "## Draft PRD\n\nRoommates argue about bills." }]),
+      );
+
+      render(<Home />);
+      fireEvent.change(screen.getByPlaceholderText("Describe the product or feature you want a plan for"), {
+        target: { value: "an app" },
+      });
+      fireEvent.click(screen.getByText("Generate plan"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("prd-approval-form")).toBeTruthy();
+      });
+    }
+
+    it("shows the drafted PRD for approval instead of a result", async () => {
+      await startPrdApprovalRun();
+
+      expect(screen.getByTestId("prd-approval-draft").textContent).toContain("Roommates argue about bills.");
+      expect(screen.queryByTestId("result-view")).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("posts an approval back against the paused run's id and navigates to its permalink on completion", async () => {
+      await startPrdApprovalRun();
+      fetchMock.mockResolvedValueOnce(sseResponse([{ type: "result", result: RESULT, runId: "run-abc" }]));
+
+      fireEvent.click(screen.getByTestId("prd-approval-approve"));
+
+      await waitFor(() => {
+        expect(pushMock).toHaveBeenCalledWith("/run/run-abc");
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const secondCall = fetchMock.mock.calls[1] as [string, { body: string }];
+      expect(JSON.parse(secondCall[1].body)).toEqual({ runId: "run-abc", prdApproval: { approved: true } });
+    });
+
+    it("posts feedback back for revision, and shows the revised draft's new approval pause", async () => {
+      await startPrdApprovalRun();
+      fetchMock.mockResolvedValueOnce(
+        sseResponse([
+          { type: "prd-approval-request", runId: "run-abc", prd: "## Revised draft\n\nWith a competitive analysis." },
+        ]),
+      );
+
+      fireEvent.change(screen.getByPlaceholderText("What should change?"), {
+        target: { value: "Add a competitive analysis section." },
+      });
+      fireEvent.click(screen.getByTestId("prd-approval-revise"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("prd-approval-draft").textContent).toContain("competitive analysis");
+      });
+
+      const secondCall = fetchMock.mock.calls[1] as [string, { body: string }];
+      expect(JSON.parse(secondCall[1].body)).toEqual({
+        runId: "run-abc",
+        prdApproval: { approved: false, feedback: "Add a competitive analysis section." },
       });
     });
   });

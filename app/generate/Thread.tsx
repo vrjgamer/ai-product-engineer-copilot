@@ -1,5 +1,6 @@
 import type { StreamEvent } from "../../lib/graph/streamProtocol";
 import { ClarificationForm } from "./ClarificationForm";
+import { PrdApprovalForm } from "./PrdApprovalForm";
 import type { RunStatus } from "./RunView";
 
 export interface AnsweredQuestions {
@@ -19,6 +20,10 @@ export interface ThreadProps {
   /** The questions and answers from a clarification exchange this run already resolved, rendered as a Q&A turn pair. */
   answeredQuestions: AnsweredQuestions | null;
   fatalError?: string | null;
+  /** The drafted PRD awaiting approval — set exactly when `status` is `awaiting-prd-approval`. */
+  prdDraft?: string | null;
+  /** Approves the drafted PRD or sends it back with feedback; required whenever `prdDraft` can be shown. */
+  onResolvePrdApproval?: (approved: boolean, feedback?: string) => void;
 }
 
 /**
@@ -47,6 +52,8 @@ export function Thread({
   onAnswer,
   answeredQuestions,
   fatalError,
+  prdDraft = null,
+  onResolvePrdApproval,
 }: ThreadProps) {
   if (status === "idle") {
     return (
@@ -92,6 +99,16 @@ export function Thread({
       {status === "awaiting-clarification" && questions.length > 0 && onAnswer ? (
         <div className="chat-turn chat-turn-assistant" data-testid="chat-turn-clarification">
           <ClarificationForm questions={questions} onSubmit={onAnswer} />
+        </div>
+      ) : null}
+
+      {status === "awaiting-prd-approval" && prdDraft && onResolvePrdApproval ? (
+        <div className="chat-turn chat-turn-assistant" data-testid="chat-turn-prd-approval">
+          <PrdApprovalForm
+            prd={prdDraft}
+            onApprove={() => onResolvePrdApproval(true)}
+            onRevise={(feedback) => onResolvePrdApproval(false, feedback)}
+          />
         </div>
       ) : null}
 
