@@ -1,32 +1,18 @@
-import { getRunEval } from "../../../lib/eval/record";
-import { getRunTrace } from "../../../lib/tracing/record";
-import { TraceView } from "../TraceView";
+import { redirect } from "next/navigation";
 
 interface TracePageProps {
   params: Promise<{ runId: string }>;
 }
 
-/** The "view trace" link's destination (TDD 0007) — server-rendered, fetches the trace row directly rather than round-tripping through an API route. */
+/**
+ * TDD 0015: `/trace/[runId]` is retired into `/run/[runId]`'s Graph tab —
+ * once the workspace panel holds both the deliverables and the graph behind
+ * one tab strip, two separate pages for the same run is the live UX
+ * contradicting itself. This redirects rather than 404ing because trace
+ * links have already been handed out, and 0012's whole argument was that a
+ * run's URL should keep working.
+ */
 export default async function TracePage({ params }: TracePageProps) {
   const { runId } = await params;
-  // Both by run ID, in parallel — a quality judgment (TDD 0011) exists only
-  // for the handful of runs the eval harness produced, so this is null for
-  // essentially every visitor run.
-  const [trace, evaluation] = await Promise.all([getRunTrace(runId), getRunEval(runId)]);
-
-  if (!trace) {
-    return (
-      <main className="page">
-        <p className="empty-state" data-testid="trace-not-found">
-          No trace found for run {runId}.
-        </p>
-      </main>
-    );
-  }
-
-  return (
-    <main className="page">
-      <TraceView trace={trace} evaluation={evaluation} />
-    </main>
-  );
+  redirect(`/run/${runId}`);
 }

@@ -1,38 +1,95 @@
+import type { RunEvalRecord } from "../../lib/eval/record";
 import type { RunResult } from "../../lib/results/record";
-import { ResultView } from "../generate/ResultView";
+import type { RunTrace } from "../../lib/tracing/record";
+import { ReplayGraphPanel } from "../generate/ReplayGraphPanel";
+import { WorkspacePanel } from "../generate/WorkspacePanel";
+import { QualitySection } from "./QualitySection";
 
 export interface StoredRunViewProps {
-  run: RunResult;
+  runId: string;
+  /** `null` if this run's deliverables were never saved — it failed, is still running, or predates TDD 0012. */
+  run: RunResult | null;
+  /** `null` if this run was never traced — TDD 0007 records traces best-effort. */
+  trace: RunTrace | null;
+  /** TDD 0011: present only for runs the eval harness graded. */
+  evaluation: RunEvalRecord | null;
 }
 
 /**
- * Renders a stored run's deliverables at its permalink (TDD 0012). Pure props
- * in, no fetch of its own — `app/run/[runId]/page.tsx` owns fetching the row,
- * exactly as the trace page owns fetching the trace for `TraceView`.
+ * A finished run's permalink (TDD 0012, absorbing the trace page in TDD
+ * 0015): the same chat-thread-plus-workspace layout the live run uses,
+ * fetched instead of streamed. `run` and `trace` are independent rows
+ * (0012 deliberately has no FK between them) so either can be absent —
+ * a run that failed after producing a trace but before a result, or one
+ * whose trace write failed, both render without error.
  *
- * The deliverables go through the *same* `ResultView` the live run used, so a
- * degraded section (TDD 0002's contract) carries the same warning here that
- * the visitor saw: a shared plan shouldn't look more complete than the run
- * that produced it.
- *
- * The request is shown above them because the deliverables refer to "the
- * product" throughout and never restate it — and the reader of a shared link
- * may not be the person who typed it.
+ * The deliverables go through the *same* `ResultView` the live run used, so
+ * a degraded section (TDD 0002's contract) carries the same warning here
+ * that the visitor saw: a shared plan shouldn't look more complete than the
+ * run that produced it.
  */
-export function StoredRunView({ run }: StoredRunViewProps) {
+export function StoredRunView({ runId, run, trace, evaluation }: StoredRunViewProps) {
+  const erroredNodes = new Set((run?.result.errors ?? []).map((error) => error.node));
+
   return (
     <section className="stored-run" data-testid="stored-run-view">
-      <h1 className="section-title">Saved plan</h1>
-      <p className="stored-run-request" data-testid="stored-run-request">
-        {run.request}
-      </p>
-      <p className="stored-run-meta" data-testid="stored-run-created-at">
-        Generated {run.createdAt}
-      </p>
-      <a className="trace-link" data-testid="view-trace-link" href={`/trace/${run.runId}`}>
-        View trace →
-      </a>
-      <ResultView result={run.result} />
+      <h1 className="section-title">Saved run</h1>
+
+      <div className="layout">
+        <div className="thread-pane" data-testid="thread-pane">
+          <div className="thread" data-testid="thread">
+            {run ? (
+              <>
+                <div className="chat-turn chat-turn-user" data-testid="chat-turn-request">
+                  <p>{run.request}</p>
+                </div>
+                <p className="stored-run-meta" data-testid="stored-run-created-at">
+                  Generated {run.createdAt}
+                </p>
+              </>
+            ) : (
+              <p className="thread-idle" data-testid="stored-run-no-result">
+                This run&apos;s deliverables weren&apos;t saved — it failed, is still in progress, or
+                predates permalinks. Its trace is still shown below.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="workspace-pane" data-testid="workspace-pane">
+          <WorkspacePanel
+            status="done"
+            result={run?.result ?? null}
+            runId={runId}
+            graph={
+              trace ? <ReplayGraphPanel traceNodes={trace.nodes} erroredNodes={erroredNodes} /> : undefined
+            }
+          />
+        </div>
+      </div>
+
+      {trace ? (
+        <dl className="trace-summary" data-testid="run-stats">
+          <div className="trace-stat">
+            <dt>Run ID</dt>
+            <dd data-testid="trace-run-id">{trace.runId}</dd>
+          </div>
+          <div className="trace-stat">
+            <dt>Started</dt>
+            <dd data-testid="trace-started-at">{trace.startedAt}</dd>
+          </div>
+          <div className="trace-stat">
+            <dt>Ended</dt>
+            <dd data-testid="trace-ended-at">{trace.endedAt}</dd>
+          </div>
+          <div className="trace-stat">
+            <dt>Total cost</dt>
+            <dd data-testid="trace-total-cost">${trace.totalCostUsd.toFixed(4)}</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <QualitySection evaluation={evaluation} />
     </section>
   );
 }

@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 
+import type { ProgressEvent } from "../../lib/graph/progress";
 import type { AssembledResult } from "../../lib/graph/state";
 import type { StreamEvent } from "../../lib/graph/streamProtocol";
+import { LiveGraphPanel } from "./LiveGraphPanel";
 import type { AnsweredQuestions } from "./Thread";
 import { Thread } from "./Thread";
 import { WorkspacePanel } from "./WorkspacePanel";
+
+function isProgressEvent(event: StreamEvent): event is ProgressEvent {
+  return event.type === "node-status" || event.type === "mcp-call";
+}
 
 export type RunStatus = "idle" | "running" | "awaiting-clarification" | "done" | "error";
 
@@ -101,7 +107,12 @@ export function RunView({
         data-testid="workspace-pane"
         data-mobile-hidden={mobileView !== "result"}
       >
-        <WorkspacePanel status={status} result={result} runId={runId} />
+        <WorkspacePanel
+          status={status}
+          result={result}
+          runId={runId}
+          graph={<LiveGraphPanel events={events.filter(isProgressEvent)} aborted={status === "error"} />}
+        />
       </div>
     </div>
   );

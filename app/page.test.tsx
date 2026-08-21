@@ -68,7 +68,7 @@ describe("Home page", () => {
     expect(screen.queryByTestId("run-fatal-error")).toBeNull();
   });
 
-  it("shows a 'view trace' link pointing at the run id streamed in the result event (TDD 0007)", async () => {
+  it("shows a shareable permalink pointing at the run id streamed in the result event (TDD 0007/0012)", async () => {
     const result = {
       prd: { content: "PRD content" },
       userStories: { content: "User stories content" },
@@ -91,7 +91,7 @@ describe("Home page", () => {
     fireEvent.click(screen.getByText("Generate plan"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("view-trace-link").getAttribute("href")).toBe("/trace/run-abc");
+      expect(screen.getByTestId("run-permalink").getAttribute("href")).toBe("/run/run-abc");
     });
   });
 
@@ -162,7 +162,7 @@ describe("Home page", () => {
         runId: "run-abc",
         answers: ["Freelance designers"],
       });
-      expect(screen.getByTestId("view-trace-link").getAttribute("href")).toBe("/trace/run-abc");
+      expect(screen.getByTestId("run-permalink").getAttribute("href")).toBe("/run/run-abc");
       expect(screen.queryByTestId("clarification-form")).toBeNull();
     });
 

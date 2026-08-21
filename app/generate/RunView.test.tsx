@@ -64,7 +64,23 @@ describe("RunView", () => {
     );
 
     expect(screen.getByTestId("result-view")).toBeTruthy();
-    expect(screen.getByTestId("view-trace-link").getAttribute("href")).toBe("/trace/run-123");
+    expect(screen.getByTestId("run-permalink").getAttribute("href")).toBe("/run/run-123");
+  });
+
+  it("done: the workspace panel's Graph tab shows the traversal built from the run's events", () => {
+    render(
+      <RunView
+        status="done"
+        requestText="A todo app"
+        events={[{ type: "node-status", node: "prdAgent", status: "completed" }]}
+        result={FULL_RESULT}
+        questions={[]}
+        answeredQuestions={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("tab-graph"));
+    expect(screen.getByTestId("graph-node-prdAgent").getAttribute("data-state")).toBe("completed");
   });
 
   it("awaiting-clarification: the clarification form is in the thread, not the workspace panel", () => {
