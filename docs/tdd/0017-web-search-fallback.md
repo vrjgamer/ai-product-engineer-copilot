@@ -93,13 +93,61 @@ That is a different risk profile from the SaaS integrations §3 rejected,
 where the integration *was* the feature. Here it's the branch taken when the
 first choice found nothing.
 
-**Provider choice is deferred to the implementing session**, with the
-constraint that it must have a free tier sufficient for demo traffic under
-the 0006 rate limit and a TTL cache. Google's Programmable Search JSON API
-(100 queries/day free) is the most literal reading of the request; Brave and
-Tavily are the alternatives worth pricing, Tavily notably returning
-LLM-shaped snippets rather than SERP HTML. Whichever is chosen, it goes
-behind the MCP tool boundary, so swapping it later is one file.
+## The search is an HTTP call, not a model capability
+
+**Hard constraint: the model never performs the search.** No Gemini Google
+Search grounding, no provider-side "web search" tool, no
+`generateText({ tools: … })` round trip where the model decides to search and
+the provider executes it. `search_web` makes an HTTP request to a search API,
+parses the JSON, and returns passages. The model only ever sees the resulting
+text, exactly as it sees `search_docs` passages today.
+
+Two reasons, and the cost one is the operative one:
+
+- **Provider-side grounding is billed per grounded request**, on top of the
+  tokens, and it forces an *extra* model round trip (decide to search →
+  search → answer). Direct HTTP pays a search-API call and nothing else. For
+  a demo whose §2 cost argument is that a full run is cents, a per-request
+  grounding surcharge on up to three nodes per run is the wrong shape of
+  bill.
+- **It keeps the seam where every other tool's seam is.** `search_docs` and
+  `get_repo_stats` are HTTP/SQL behind an MCP tool, called by node code, with
+  the policy in `gatherContext`. Model-mediated search would put one tool's
+  invocation decision inside the model while the other two stay in code —
+  two mechanisms for one job, and the one place 0007's trace couldn't see.
+
+### Provider: Tavily
+
+The obvious choice is gone. Checked at the time of writing (2026-08):
+
+| Option | Status |
+|---|---|
+| Google Programmable Search JSON API | **Closed to new customers**; existing customers must migrate by 2027-01-01 |
+| Brave Search API | Free tier **removed 2026-02**; card required, metered at ~$0.003–0.005/query, **no spending cap** |
+| Tavily | 1,000 credits/month free, no card required |
+
+Brave is rejected on the spending cap specifically. An uncapped metered API
+behind a public demo link contradicts §6's entire reasoning — that the real
+exposure is *volume*, from a shared link or a bot, not per-run cost.
+
+Tavily also happens to return snippets shaped for LLM consumption rather than
+SERP markup, which removes a parsing step this phase would otherwise own.
+
+**Budget check.** Up to three nodes ground per run, but `userStoryAgent` and
+`architectureReviewAgent` both search on the *same* PRD text, so the TTL cache
+collapses them: ~2 upstream calls per run worst case. 1,000/month is therefore
+~500 fully-ungrounded runs — and after 0016, the corpus should clear the floor
+for the example prompts, so the common path makes **zero** web calls. The free
+tier is not a constraint this demo will feel.
+
+**Exhausting the quota is a degraded note, never a bill.** No card, no
+overage path, and a quota error is caught by `tryTool` like any other tool
+failure. Verify at implementation time that the chosen account cannot
+auto-upgrade into paid.
+
+The provider sits behind the MCP tool boundary, so replacing it is one file —
+which matters more than usual here, given that two of the three options above
+changed terms within the last year.
 
 ## Acceptance criteria
 
@@ -113,6 +161,10 @@ behind the MCP tool boundary, so swapping it later is one file.
 - A deployment with no search API key configured behaves exactly as today.
 - Web results are cited with their URL, cached with a TTL, and returned as
   ISO strings (the 0013 lesson).
+- **No model call ever triggers the search.** `search_web` is invoked from
+  node code via `gatherContext`; no `tools` parameter is passed to
+  `generateText` anywhere, and no provider-side grounding feature is enabled.
+- Quota exhaustion degrades with a note and cannot incur a charge.
 - `npm run test:e2e` gains a real `search_web` round trip, consistent with
   the 0008 split.
 
