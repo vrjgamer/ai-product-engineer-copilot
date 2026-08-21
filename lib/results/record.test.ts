@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AssembledResult } from "../graph/state";
 import type { RunResult } from "./record";
-import { getRunResult, recordRunResult } from "./record";
+import { getRunResult, listRecentRuns, recordRunResult } from "./record";
 
 interface Row {
   run_id: string;
@@ -34,6 +34,14 @@ function createFakeDb(initialRows: Row[] = []) {
         if (existing) Object.assign(existing, row);
         else rows.push(row);
         return { rows: [] };
+      }
+
+      if (trimmed.startsWith("SELECT run_id, request, created_at FROM run_results ORDER BY")) {
+        const [limit] = params as [number];
+        const sorted = [...rows].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        return { rows: sorted.slice(0, limit) as T[] };
       }
 
       if (trimmed.startsWith("SELECT run_id")) {
@@ -131,5 +139,46 @@ describe("getRunResult", () => {
     const stored = await getRunResult("run-2", db);
 
     expect(stored?.createdAt).toBe("2026-02-02T03:04:05.000Z");
+  });
+});
+
+describe("listRecentRuns", () => {
+  it("returns the most recently created runs first", async () => {
+    const db = createFakeDb();
+    await recordRunResult({ ...FIXTURE_RUN, runId: "run-older", createdAt: "2026-01-01T00:00:00.000Z" }, db);
+    await recordRunResult({ ...FIXTURE_RUN, runId: "run-newer", createdAt: "2026-01-02T00:00:00.000Z" }, db);
+
+    const runs = await listRecentRuns(30, db);
+
+    expect(runs.map((run) => run.runId)).toEqual(["run-newer", "run-older"]);
+  });
+
+  it("caps the list at the given limit", async () => {
+    const db = createFakeDb();
+    for (let index = 0; index < 5; index += 1) {
+      await recordRunResult(
+        { ...FIXTURE_RUN, runId: `run-${index}`, createdAt: `2026-01-0${index + 1}T00:00:00.000Z` },
+        db,
+      );
+    }
+
+    const runs = await listRecentRuns(3, db);
+
+    expect(runs).toHaveLength(3);
+  });
+
+  it("returns only the request and timestamp, not the deliverables", async () => {
+    const db = createFakeDb();
+    await recordRunResult(FIXTURE_RUN, db);
+
+    const [run] = await listRecentRuns(30, db);
+
+    expect(run).toEqual({ runId: "run-1", request: FIXTURE_RUN.request, createdAt: FIXTURE_RUN.createdAt });
+  });
+
+  it("returns an empty list when no runs have been stored", async () => {
+    const db = createFakeDb();
+
+    expect(await listRecentRuns(30, db)).toEqual([]);
   });
 });

@@ -41,6 +41,12 @@ export async function recordRunResult(record: RunResult, db: DbClient = getDb())
   );
 }
 
+export interface RunSummary {
+  runId: string;
+  request: string;
+  createdAt: string;
+}
+
 interface RunResultRow {
   run_id: string;
   request: string;
@@ -66,4 +72,32 @@ export async function getRunResult(
     createdAt: new Date(row.created_at).toISOString(),
     result: row.result,
   };
+}
+
+interface RunSummaryRow {
+  run_id: string;
+  request: string;
+  created_at: string | Date;
+}
+
+/**
+ * Lists the most recent runs (request + timestamp only, no deliverables —
+ * this is a lightweight feed, not a fetch of every result) for the main
+ * page's "recent runs" sidebar. This is a deliberate reversal of TDD 0012's
+ * "the URL is the capability, nothing enumerates run IDs" stance: a run's
+ * permalink is still unguessable to anyone who doesn't see it here or get
+ * it shared, but this makes every visitor's request text visible to every
+ * other visitor. Product decision, not an oversight.
+ */
+export async function listRecentRuns(limit = 30, db: DbClient = getDb()): Promise<RunSummary[]> {
+  const { rows } = await db.query<RunSummaryRow>(
+    `SELECT run_id, request, created_at FROM run_results ORDER BY created_at DESC LIMIT $1`,
+    [limit],
+  );
+
+  return rows.map((row) => ({
+    runId: row.run_id,
+    request: row.request,
+    createdAt: new Date(row.created_at).toISOString(),
+  }));
 }

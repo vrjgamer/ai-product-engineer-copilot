@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StreamEvent } from "../lib/graph/streamProtocol";
-import Home from "./page";
+import Home from "./HomeClient";
 
 const pushMock = vi.fn();
 vi.mock("next/navigation", () => ({
