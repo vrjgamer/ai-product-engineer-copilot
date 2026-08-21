@@ -48,6 +48,26 @@ describe("searchDocs", () => {
     expect(embeddedQuery).toBe("how does checkpointing work");
   });
 
+  it("returns no passages without calling the embeddings API when the query is blank", async () => {
+    // TDD 0002's graceful degradation means an upstream node can hand a
+    // downstream one an empty deliverable — userStoryAgent and
+    // architectureReviewAgent both search on the PRD's text. Embedding "" is
+    // rejected by the provider ("EmbedContentRequest.content contains an empty
+    // Part"), which turned one node's degradation into three more errors and
+    // spent an API call to earn each one.
+    const db = createFakeDb([{ source_id: "a.md", content: "a" }]);
+    let embedCalls = 0;
+    const embedQuery = async () => {
+      embedCalls += 1;
+      return [0.1];
+    };
+
+    const result = await searchDocs(db, embedQuery, "   ");
+
+    expect(result.passages).toEqual([]);
+    expect(embedCalls).toBe(0);
+  });
+
   it("respects the requested limit", async () => {
     const db = createFakeDb([
       { source_id: "a.md", content: "a" },

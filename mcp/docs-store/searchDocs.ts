@@ -31,6 +31,13 @@ export async function searchDocs(
   query: string,
   limit = DEFAULT_LIMIT,
 ): Promise<SearchDocsResult> {
+  // A blank query has no nearest neighbours worth the round trip, and every
+  // embeddings provider rejects it outright. Callers reach here with one when
+  // an upstream node degraded (TDD 0002) — searching on a PRD that failed to
+  // generate — so returning "no passages" keeps that one failure from
+  // cascading into an error per downstream node.
+  if (query.trim() === "") return { passages: [] };
+
   const embedding = await embedQuery(query);
 
   const { rows } = await db.query<DocChunkRow>(

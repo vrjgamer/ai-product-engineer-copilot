@@ -8,7 +8,14 @@ interface FixtureRow {
   open_issues: number;
   commit_velocity: number;
   pr_merge_rate: number;
-  fetched_at: string;
+  /**
+   * `string | Date` because that's what the real driver does: `node-postgres`
+   * parses a `TIMESTAMPTZ` column into a `Date`, while the value this module
+   * *writes* is an ISO string. A fixture typed `string` only is better-behaved
+   * than the real database, which is how the cache-hit path shipped returning a
+   * `Date` through a `z.string()` MCP output schema.
+   */
+  fetched_at: string | Date;
 }
 
 function createFakeDb(initialRows: FixtureRow[] = []) {
@@ -84,6 +91,35 @@ describe("getRepoStats", () => {
       prMergeRate: 0.9,
       fetchedAt: "2026-01-01T00:00:00.000Z",
     });
+  });
+
+  it("normalizes a Date from the driver into an ISO string on the cache-hit path", async () => {
+    // What `node-postgres` actually hands back for a TIMESTAMPTZ column. The
+    // MCP output schema (mcp/analytics/server.ts) declares `fetchedAt` as
+    // `z.string()`, so returning the Date through unvalidated every call
+    // within the TTL — i.e. all but the first — with a -32602 output
+    // validation error, while the fresh path's `.toISOString()` stayed fine.
+    const db = createFakeDb([
+      {
+        repo: "acme/demo",
+        stars: 42,
+        open_issues: 3,
+        commit_velocity: 7,
+        pr_merge_rate: 0.9,
+        fetched_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const stats = await getRepoStats(
+      db,
+      vi.fn(),
+      "acme/demo",
+      TTL_MS,
+      () => new Date("2026-01-01T00:30:00.000Z"),
+    );
+
+    expect(stats.fetchedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(typeof stats.fetchedAt).toBe("string");
   });
 
   it("calls the GitHub API and refreshes the cache when the cached row has expired", async () => {

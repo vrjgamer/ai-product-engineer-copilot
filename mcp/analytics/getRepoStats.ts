@@ -19,7 +19,8 @@ interface CacheRow {
   open_issues: number;
   commit_velocity: number;
   pr_merge_rate: number;
-  fetched_at: string;
+  /** `node-postgres` parses TIMESTAMPTZ into a `Date`, even though what this module writes is an ISO string — hence both, normalized on the way out. */
+  fetched_at: string | Date;
 }
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -52,7 +53,7 @@ export async function getRepoStats(
       openIssues: cached.open_issues,
       commitVelocity: cached.commit_velocity,
       prMergeRate: cached.pr_merge_rate,
-      fetchedAt: cached.fetched_at,
+      fetchedAt: new Date(cached.fetched_at).toISOString(),
     };
   }
 
