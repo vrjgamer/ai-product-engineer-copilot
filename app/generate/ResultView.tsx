@@ -1,5 +1,7 @@
 "use client";
 
+import "github-markdown-css/github-markdown.css";
+
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -61,7 +63,7 @@ export function ResultView({ result }: ResultViewProps) {
         return (
           <div className="panel" key={section.key} role="tabpanel" data-testid={`panel-${section.key}`}>
             {content ? (
-              <div className="markdown" data-testid={`content-${section.key}`}>
+              <div className="markdown-body" data-testid={`content-${section.key}`}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
               </div>
             ) : (
