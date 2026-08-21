@@ -549,8 +549,12 @@ Queued, not yet built:
 13. [`0013-production-hardening.md`](./docs/tdd/0013-production-hardening.md) —
     partially landed; the deployment-configuration gaps it documents are what
     made the demo return five empty panels in production.
-14. `0014` — chat-style UI redesign.
-15. `0015` — animated graph traversal, absorbing `/trace/[runId]`.
+14. [`0014-chat-style-ui.md`](./docs/tdd/0014-chat-style-ui.md) — the page
+    becomes a conversational thread plus a workspace panel, matching the
+    turn-taking interaction 0010 actually built.
+15. [`0015-graph-traversal-view.md`](./docs/tdd/0015-graph-traversal-view.md) —
+    draws the §1 graph as it executes, and retires `/trace/[runId]` into
+    `/run/[runId]`. Ships with 0014 or not at all.
 16. [`0016-domain-corpus.md`](./docs/tdd/0016-domain-corpus.md) — replaces the
     self-referential `search_docs` corpus with domain documents the example
     prompts can actually be grounded in.
