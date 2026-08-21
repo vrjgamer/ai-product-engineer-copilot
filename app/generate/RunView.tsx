@@ -1,13 +1,19 @@
+"use client";
+
+import { useState } from "react";
+
 import type { AssembledResult } from "../../lib/graph/state";
 import type { StreamEvent } from "../../lib/graph/streamProtocol";
-import { ClarificationForm } from "./ClarificationForm";
-import { ProgressLog } from "./ProgressLog";
-import { ResultView } from "./ResultView";
+import type { AnsweredQuestions } from "./Thread";
+import { Thread } from "./Thread";
+import { WorkspacePanel } from "./WorkspacePanel";
 
 export type RunStatus = "idle" | "running" | "awaiting-clarification" | "done" | "error";
 
 export interface RunViewProps {
   status: RunStatus;
+  /** The visitor's request text, rendered as the thread's opening user turn. */
+  requestText: string;
   events: StreamEvent[];
   result: AssembledResult | null;
   fatalError?: string | null;
@@ -17,56 +23,86 @@ export interface RunViewProps {
   questions?: string[];
   /** Submits answers for the paused run; required whenever questions can be shown. */
   onAnswer?: (answers: string[]) => void;
+  /** The questions and answers from a clarification exchange this run already resolved (TDD 0014), rendered as a Q&A turn pair. */
+  answeredQuestions?: AnsweredQuestions | null;
 }
 
 /**
- * The states this app's single run can be in: idle (nothing submitted yet),
- * running (live progress, no result yet), awaiting-clarification (TDD 0010 —
- * paused at a durable checkpoint with questions on screen), done (final
- * five-section output, possibly with degraded sections), and error (the run
- * itself never produced a result). Pure props in, no fetch of its own — the
- * orchestrator in `app/page.tsx` owns the network calls, for both the
- * initial run and the resume, and feeds this component the accumulated
- * events.
+ * The chat-style layout this app's single run renders into (TDD 0014): a
+ * conversational thread on the left, and a workspace panel on the right
+ * holding the deliverables. Above ~900px they sit side by side (handled in
+ * CSS); below, a Chat/Result toggle switches between them, mirroring
+ * claude.ai's own mobile behaviour. Pure props in, no fetch of its own — the
+ * orchestrator in `app/page.tsx` owns the network calls and feeds this
+ * component the accumulated events.
  */
-export function RunView({ status, events, result, fatalError, runId, questions = [], onAnswer }: RunViewProps) {
+export function RunView({
+  status,
+  requestText,
+  events,
+  result,
+  fatalError,
+  runId,
+  questions = [],
+  onAnswer,
+  answeredQuestions = null,
+}: RunViewProps) {
+  const [mobileView, setMobileView] = useState<"chat" | "result">("chat");
+
   if (status === "idle") {
     return (
-      <p className="run-idle" data-testid="run-idle">
-        Describe a product or feature above, or pick an example, to see a run.
-      </p>
+      <Thread
+        status="idle"
+        requestText={requestText}
+        events={events}
+        questions={questions}
+        answeredQuestions={answeredQuestions}
+      />
     );
   }
 
   return (
-    <div className="run" data-testid="run-view">
-      <ProgressLog events={events} live={status === "running"} />
-      {status === "awaiting-clarification" && questions.length > 0 && onAnswer ? (
-        <ClarificationForm questions={questions} onSubmit={onAnswer} />
-      ) : null}
-      {status === "error" ? (
-        <p className="banner banner-error" role="alert" data-testid="run-fatal-error">
-          Something went wrong{fatalError ? `: ${fatalError}` : "."}
-        </p>
-      ) : null}
-      {status === "done" && result ? (
-        <>
-          {runId ? (
-            <div className="run-links">
-              {/* TDD 0012: worded as a share link on purpose — the URL is the
-                  only thing gating access, so a visitor copying it should
-                  know that's what they're copying. */}
-              <a className="trace-link" data-testid="run-permalink" href={`/run/${runId}`}>
-                Save or share this plan →
-              </a>
-              <a className="trace-link" data-testid="view-trace-link" href={`/trace/${runId}`}>
-                View trace →
-              </a>
-            </div>
-          ) : null}
-          <ResultView result={result} />
-        </>
-      ) : null}
+    <div className="layout" data-testid="run-view">
+      <div className="mobile-toggle" data-testid="mobile-toggle">
+        <button
+          className="mobile-toggle-btn"
+          type="button"
+          data-testid="mobile-toggle-chat"
+          aria-pressed={mobileView === "chat"}
+          onClick={() => setMobileView("chat")}
+        >
+          Chat
+        </button>
+        <button
+          className="mobile-toggle-btn"
+          type="button"
+          data-testid="mobile-toggle-result"
+          aria-pressed={mobileView === "result"}
+          onClick={() => setMobileView("result")}
+        >
+          Result
+        </button>
+      </div>
+
+      <div className="thread-pane" data-testid="thread-pane" data-mobile-hidden={mobileView !== "chat"}>
+        <Thread
+          status={status}
+          requestText={requestText}
+          events={events}
+          questions={questions}
+          onAnswer={onAnswer}
+          answeredQuestions={answeredQuestions}
+          fatalError={fatalError}
+        />
+      </div>
+
+      <div
+        className="workspace-pane"
+        data-testid="workspace-pane"
+        data-mobile-hidden={mobileView !== "result"}
+      >
+        <WorkspacePanel status={status} result={result} runId={runId} />
+      </div>
     </div>
   );
 }

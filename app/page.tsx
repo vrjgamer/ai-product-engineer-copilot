@@ -7,6 +7,7 @@ import type { AssembledResult } from "../lib/graph/state";
 import type { StreamEvent } from "../lib/graph/streamProtocol";
 import { parseProgressStream } from "../lib/client/parseProgressStream";
 import { RunView, type RunStatus } from "./generate/RunView";
+import type { AnsweredQuestions } from "./generate/Thread";
 import { RateLimitNote } from "./RateLimitNote";
 import { WhatsNextNote } from "./WhatsNextNote";
 
@@ -19,10 +20,12 @@ const EXAMPLE_PROMPTS = [
 export default function Home() {
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<RunStatus>("idle");
+  const [requestText, setRequestText] = useState("");
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [result, setResult] = useState<AssembledResult | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<string[]>([]);
+  const [answeredQuestions, setAnsweredQuestions] = useState<AnsweredQuestions | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
@@ -93,21 +96,26 @@ export default function Home() {
     }
   }
 
-  function run(requestText: string) {
+  function run(text: string) {
+    setRequestText(text);
     setEvents([]);
     setResult(null);
     setRunId(null);
     setQuestions([]);
-    void post({ input: requestText });
+    setAnsweredQuestions(null);
+    void post({ input: text });
   }
 
   /**
    * Resumes the paused run. Deliberately keeps `events` — the supervisor's
    * decision and everything before the pause are part of the same run, and
-   * clearing them would make the graph look like it restarted.
+   * clearing them would make the graph look like it restarted. Records the
+   * exchange in `answeredQuestions` (TDD 0014) so the thread can render it
+   * as a Q&A turn pair once `questions` is cleared.
    */
   function answer(answers: string[]) {
     if (!runId) return;
+    setAnsweredQuestions({ questions, answers });
     setQuestions([]);
     void post({ runId, answers });
   }
@@ -171,12 +179,14 @@ export default function Home() {
 
       <RunView
         status={status}
+        requestText={requestText}
         events={events}
         result={result}
         fatalError={fatalError}
         runId={runId}
         questions={questions}
         onAnswer={answer}
+        answeredQuestions={answeredQuestions}
       />
 
       <WhatsNextNote />

@@ -166,7 +166,7 @@ describe("Home page", () => {
       expect(screen.queryByTestId("clarification-form")).toBeNull();
     });
 
-    it("keeps the pre-pause progress on screen through the resume", async () => {
+    it("keeps the pre-pause exchange on screen through the resume, as part of the same thread", async () => {
       await startPausedRun();
       fetchMock.mockResolvedValueOnce(
         sseResponse([
@@ -181,10 +181,9 @@ describe("Home page", () => {
         expect(screen.getByTestId("result-view")).toBeTruthy();
       });
 
-      // Both legs are one run — clearing the earlier events would make the
-      // graph look like it restarted from scratch.
-      expect(screen.getByTestId("node-status-supervisor").getAttribute("data-status")).toBe("completed");
-      expect(screen.getByTestId("node-status-prdAgent").getAttribute("data-status")).toBe("completed");
+      // Both legs are one run — the questions the run paused on stay
+      // visible as a resolved Q&A turn rather than disappearing.
+      expect(screen.getByTestId("chat-turn-questions").textContent).toContain("Who is this for?");
     });
 
     it("surfaces a failed resume as the run's error state", async () => {
