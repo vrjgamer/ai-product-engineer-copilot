@@ -13,11 +13,11 @@ const NODES: NodeTrace[] = [
 ];
 
 describe("ReplayGraphPanel", () => {
-  it("renders a replay control and the graph", () => {
+  it("renders the graph in its finished state, with no replay control", () => {
     render(<ReplayGraphPanel traceNodes={NODES} />);
 
     expect(screen.getByTestId("graph-view")).toBeTruthy();
-    expect(screen.getByTestId("replay-restart")).toBeTruthy();
+    expect(screen.queryByTestId("replay-restart")).toBeNull();
   });
 
   it("selecting a node shows its final (not in-progress) latency/token detail", () => {

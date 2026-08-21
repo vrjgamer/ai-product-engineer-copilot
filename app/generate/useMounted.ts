@@ -7,15 +7,11 @@ import { useEffect, useState } from "react";
  * (`ResizeObserver`, viewport dimensions) it doesn't have during SSR — the
  * server renders an empty/unmeasured canvas, and when the client then
  * renders something different on hydration, React discards and re-renders
- * that subtree from scratch to recover. If a timer (the replay animation,
- * `useReplayPlayer`) has already started ticking by the time that recovery
- * finishes, the graph can appear to "flash" straight to a later — or fully
- * finished — state instead of animating from the start.
+ * that subtree from scratch to recover.
  *
  * Gating browser-only rendering behind this hook keeps the server's HTML
  * and the client's first paint identical (both render nothing / a
- * placeholder), so there's no mismatch to recover from and no lost time
- * before the animation's first frame is actually visible.
+ * placeholder), so there's no mismatch to recover from.
  */
 export function useMounted(): boolean {
   const [mounted, setMounted] = useState(false);

@@ -7,8 +7,6 @@ import type { NodeTrace } from "../../lib/tracing/record";
 import { GraphView } from "./GraphView";
 import { NodeDetail } from "./NodeDetail";
 import { viewStateFromTrace } from "./graphViewModel";
-import { buildReplaySchedule, viewStateAtElapsed } from "./replaySchedule";
-import { useReplayPlayer } from "./useReplayPlayer";
 
 export interface ReplayGraphPanelProps {
   traceNodes: NodeTrace[];
@@ -17,29 +15,21 @@ export interface ReplayGraphPanelProps {
 }
 
 /**
- * The Graph tab's replay content for a stored run (TDD 0015): the real
- * traversal, compressed into a several-second animation via
- * `useReplayPlayer`, with a restart control. Node detail always reflects the
- * run's *final* outcome (`finalView`), not the animated frame — selecting a
- * node mid-replay to check its latency shouldn't require waiting for the
- * animation to reach it.
+ * The Graph tab's content for a stored run (TDD 0015): the real traversal in
+ * its finished state, straight away — no replay animation. An earlier
+ * version compressed the traversal into a several-second animation, but its
+ * timing was fragile enough (a single slow node could round every other
+ * node's scaled duration to 0ms) that it read as broken more often than not,
+ * so it's gone rather than re-fixed again.
  */
 export function ReplayGraphPanel({ traceNodes, erroredNodes = new Set() }: ReplayGraphPanelProps) {
   const [selectedNode, setSelectedNode] = useState<GraphNodeName | null>(null);
-  const schedule = useMemo(() => buildReplaySchedule(traceNodes), [traceNodes]);
   const finalView = useMemo(() => viewStateFromTrace(traceNodes, erroredNodes), [traceNodes, erroredNodes]);
-  const player = useReplayPlayer(schedule);
-  const animatedView = viewStateAtElapsed(schedule, finalView, player.elapsedMs);
   const selected = selectedNode ? (finalView.nodes.find((node) => node.name === selectedNode) ?? null) : null;
 
   return (
     <div className="graph-panel" data-testid="replay-graph-panel">
-      <div className="replay-controls">
-        <button type="button" className="chip" data-testid="replay-restart" onClick={player.restart}>
-          {player.playing ? "Restart" : "Play again"}
-        </button>
-      </div>
-      <GraphView viewState={animatedView} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
+      <GraphView viewState={finalView} selectedNode={selectedNode} onSelectNode={setSelectedNode} />
       <NodeDetail node={selected} />
     </div>
   );

@@ -140,13 +140,11 @@ export function GraphView({ viewState, selectedNode, onSelectNode, aborted = fal
         @xyflow/react needs browser APIs (ResizeObserver, viewport size) it
         doesn't have during SSR. Rendering it there produces a canvas that
         doesn't match what the client renders on hydration, and React's
-        mismatch recovery (discard + re-render the subtree) can eat enough
-        time that a running animation (`useReplayPlayer`) has already
-        finished ticking by the time anything is actually visible — the
-        graph "flashing" straight to its end state instead of animating.
-        Rendering nothing here until mounted keeps the server's HTML and the
-        client's first paint identical, so there's no mismatch to recover
-        from (see useMounted.ts).
+        mismatch recovery (discard + re-render the subtree) can leave a
+        blank canvas visible for a beat. Rendering nothing here until
+        mounted keeps the server's HTML and the client's first paint
+        identical, so there's no mismatch to recover from (see
+        useMounted.ts).
       */}
       {mounted ? (
         <ReactFlow
