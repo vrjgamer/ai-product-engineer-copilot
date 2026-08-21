@@ -8,6 +8,7 @@ import type { GraphNodeName } from "../../lib/graph/progress";
 import type { GraphViewState } from "./graphViewModel";
 import { GRAPH_EDGES } from "./graphViewModel";
 import { NODE_LABEL, NODE_ORDER } from "./nodeMeta";
+import { useMounted } from "./useMounted";
 
 export interface GraphViewProps {
   viewState: GraphViewState;
@@ -32,15 +33,15 @@ export interface GraphViewProps {
  * runtime tool-calling loop, which would make positions genuinely dynamic.
  */
 const POSITIONS: Record<GraphNodeName, { x: number; y: number }> = {
-  supervisor: { x: 260, y: 0 },
-  clarificationGate: { x: 20, y: 110 },
-  prdAgent: { x: 260, y: 110 },
-  prdApprovalGate: { x: 260, y: 220 },
-  userStoryAgent: { x: 0, y: 350 },
-  architectureReviewAgent: { x: 260, y: 350 },
-  experimentDesignAgent: { x: 520, y: 350 },
-  roadmapAgent: { x: 260, y: 480 },
-  assembler: { x: 260, y: 570 },
+  supervisor: { x: 280, y: 0 },
+  clarificationGate: { x: 0, y: 170 },
+  prdAgent: { x: 280, y: 170 },
+  prdApprovalGate: { x: 280, y: 360 },
+  userStoryAgent: { x: -60, y: 560 },
+  architectureReviewAgent: { x: 280, y: 560 },
+  experimentDesignAgent: { x: 620, y: 560 },
+  roadmapAgent: { x: 280, y: 760 },
+  assembler: { x: 280, y: 920 },
 };
 
 interface AgentNodeData extends Record<string, unknown> {
@@ -96,6 +97,7 @@ const nodeTypes = { agent: AgentNode };
  * detail a canvas click gives.
  */
 export function GraphView({ viewState, selectedNode, onSelectNode, aborted = false }: GraphViewProps) {
+  const mounted = useMounted();
   const byName = new Map(viewState.nodes.map((node) => [node.name, node]));
 
   const nodes: Node<AgentNodeData>[] = NODE_ORDER.map((name) => {
@@ -134,21 +136,35 @@ export function GraphView({ viewState, selectedNode, onSelectNode, aborted = fal
 
   return (
     <div className="graph-canvas" data-testid="graph-view">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodeClick={(_event, node) => onSelectNode(node.id as GraphNodeName)}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background gap={20} size={1.3} />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={0} />
-      </ReactFlow>
+      {/*
+        @xyflow/react needs browser APIs (ResizeObserver, viewport size) it
+        doesn't have during SSR. Rendering it there produces a canvas that
+        doesn't match what the client renders on hydration, and React's
+        mismatch recovery (discard + re-render the subtree) can eat enough
+        time that a running animation (`useReplayPlayer`) has already
+        finished ticking by the time anything is actually visible — the
+        graph "flashing" straight to its end state instead of animating.
+        Rendering nothing here until mounted keeps the server's HTML and the
+        client's first paint identical, so there's no mismatch to recover
+        from (see useMounted.ts).
+      */}
+      {mounted ? (
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodeClick={(_event, node) => onSelectNode(node.id as GraphNodeName)}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable
+          fitView
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={20} size={1.3} />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable nodeStrokeWidth={0} />
+        </ReactFlow>
+      ) : null}
       <ul className="sr-only" data-testid="graph-text-equivalent">
         {NODE_ORDER.map((name) => {
           const node = byName.get(name);

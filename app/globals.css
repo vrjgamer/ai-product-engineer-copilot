@@ -1034,12 +1034,30 @@ a:focus-visible {
 }
 
 .prd-approval-draft {
-  max-height: 260px;
+  height: 320px;
+  min-height: 160px;
+  max-height: 80vh;
+  resize: vertical;
   overflow-y: auto;
-  padding: 0.9rem 1rem;
+  padding: 0.9rem 1.1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
+}
+
+/* github-markdown-css's default heading scale reads fine in the full
+   result panel but overwhelms this compact review box — turned down so a
+   PRD's own heading hierarchy doesn't drown out its body text. */
+.prd-approval-draft h1 {
+  font-size: 1.3rem;
+}
+
+.prd-approval-draft h2 {
+  font-size: 1.1rem;
+}
+
+.prd-approval-draft h3 {
+  font-size: 1rem;
 }
 
 .prd-approval textarea {
