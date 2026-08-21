@@ -34,13 +34,15 @@ TypeScript, Next.js (single app — UI and backend together), LangGraph.js
 MCP TypeScript SDK, Neon Postgres (`pgvector`) for all persistence, deployed
 on Vercel's free tier with Fluid Compute.
 
-Default model: Claude Haiku 4.5 — chosen deliberately as the cheapest current
-Claude model, since this is a public demo rather than a system optimizing for
-output quality. See `ARCHITECTURE.md` §2 for the reasoning and cost estimate.
+Code default model: Claude Haiku 4.5 — chosen deliberately as the cheapest
+current Claude model, since this is a public demo rather than a system
+optimizing for output quality. The deployed demo actually runs Gemini 3.6
+Flash (the key available at no cost — Anthropic has no free tier). See
+`ARCHITECTURE.md` §2 for the reasoning and §12 for what's actually deployed.
 
 ## Current status
 
-**All twelve TDDs have landed — the system described in `ARCHITECTURE.md` is
+**All thirteen TDDs have landed — the system described in `ARCHITECTURE.md` is
 built.** What that means concretely:
 
 - A visitor types a free-text product description and gets five
@@ -54,7 +56,8 @@ built.** What that means concretely:
   up to three questions, and continues with the answers folded into the PRD
   (TDD 0010). Answering is optional — skipping runs it on stated assumptions.
 - Model calls go through one provider seam (`lib/models/provider.ts`,
-  `MODEL_PROVIDER`/`MODEL_ID`), defaulting to Claude Haiku 4.5.
+  `MODEL_PROVIDER`/`MODEL_ID`), code-defaulting to Claude Haiku 4.5 but
+  actually deployed on Gemini 3.6 Flash.
 - Two MCP servers do real work: `docs-store` runs pgvector search over this
   repo's own indexed docs, `analytics` pulls real GitHub repo stats with a
   TTL cache. Both are real MCP JSON-RPC over an in-process transport, and an
