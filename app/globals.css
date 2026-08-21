@@ -184,13 +184,6 @@ body {
   font-size: 0.85rem;
 }
 
-/*
- * Below ~1000px the sidebar stacks above the run content instead of beside
- * it. It stays first in visual order (not pushed below, which used to bury
- * it under a full chat thread + graph once a run got going — "the sidebar
- * hides mid-run") and collapses to a short sticky strip so it doesn't eat
- * the screen on a narrow viewport.
- */
 @media (max-width: 1000px) {
   .home-shell {
     flex-direction: column;
@@ -199,17 +192,14 @@ body {
   .recent-runs {
     flex-basis: auto;
     width: 100%;
-    position: sticky;
-    top: 0;
-    max-height: 30vh;
-    padding-top: 0.75rem;
-    order: 1;
-    background: var(--bg);
-    z-index: 3;
+    position: static;
+    max-height: none;
+    padding-top: 0;
+    order: 2;
   }
 
   .home-shell .page {
-    order: 2;
+    order: 1;
     padding-bottom: 2rem;
   }
 }

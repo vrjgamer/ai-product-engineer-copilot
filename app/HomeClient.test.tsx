@@ -121,6 +121,27 @@ describe("Home page", () => {
     expect(screen.queryByTestId("whats-next-note")).toBeNull();
   });
 
+  it("hides the recent-runs sidebar once a run starts, and shows it again on the idle landing page", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(sseBody([{ type: "node-status", node: "supervisor", status: "running" }]), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
+
+    render(<Home recentRuns={[{ runId: "run-1", request: "Build a todo app", createdAt: new Date().toISOString() }]} />);
+    expect(screen.getByTestId("recent-runs-sidebar")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Describe the product or feature you want a plan for"), {
+      target: { value: "Build a todo app" },
+    });
+    fireEvent.click(screen.getByText("Generate plan"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("recent-runs-sidebar")).toBeNull();
+    });
+  });
+
   /** TDD 0010: the run pauses, the page asks, the answers go back on the same runId. */
   describe("clarifying questions", () => {
     const RESULT = {

@@ -6,9 +6,11 @@ import type { FormEvent } from "react";
 
 import type { StreamEvent } from "../lib/graph/streamProtocol";
 import { parseProgressStream } from "../lib/client/parseProgressStream";
+import type { RunSummary } from "../lib/results/record";
 import { RunView, type RunStatus } from "./generate/RunView";
 import type { AnsweredQuestions } from "./generate/Thread";
 import { RateLimitNote } from "./RateLimitNote";
+import { RecentRunsSidebar } from "./RecentRunsSidebar";
 import { ThemeToggle } from "./theme/ThemeToggle";
 import { WhatsNextNote } from "./WhatsNextNote";
 
@@ -18,8 +20,13 @@ const EXAMPLE_PROMPTS = [
   "A browser extension that summarizes long GitHub pull request diffs",
 ];
 
-/** The interactive half of the main page — everything but the recent-runs sidebar, which `app/page.tsx` fetches server-side and renders alongside this. */
-export default function HomeClient() {
+export interface HomeClientProps {
+  /** The last 30 runs (TDD 0012's sidebar reversal), fetched server-side by `app/page.tsx`. */
+  recentRuns?: RunSummary[];
+}
+
+/** The whole landing page: `app/page.tsx` fetches the recent-runs list server-side, this owns everything interactive — including hiding that sidebar once a run is in progress, since it doesn't have anything to do with the run at hand. */
+export default function HomeClient({ recentRuns = [] }: HomeClientProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<RunStatus>("idle");
@@ -159,85 +166,88 @@ export default function HomeClient() {
   const idle = status === "idle";
 
   return (
-    <main className="page">
-      <div className="brand-row">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true" />
-          <span className="brand-name">AI Product Engineer Copilot</span>
-        </div>
-        <ThemeToggle />
-      </div>
-
-      {rateLimitMessage ? (
-        <p className="banner" role="alert" data-testid="rate-limit-banner">
-          {rateLimitMessage}
-        </p>
-      ) : null}
-
-      {/*
-        Landing (composer, examples, the deferred-capabilities note) is the
-        only thing on screen until a run starts — once it does, this whole
-        block disappears rather than lingering above the thread. A finished
-        run navigates to its own permalink instead of returning here, so
-        there's no "complete" state to design for below.
-      */}
-      {idle ? (
-        <>
-          <header className="hero">
-            <h1>AI Product Engineer Copilot</h1>
-            <p className="hero-lede">
-              Describe the product or feature you want a plan for. A multi-agent graph writes the PRD,
-              user stories, architecture review, experiment design, and roadmap.
-            </p>
-            <RateLimitNote />
-          </header>
-
-          <form className="card composer" onSubmit={handleSubmit}>
-            <textarea
-              value={input}
-              onChange={(changeEvent) => setInput(changeEvent.target.value)}
-              placeholder="Describe the product or feature you want a plan for"
-              rows={4}
-            />
-            <div className="composer-actions">
-              <button className="btn-primary" type="submit" disabled={busy || !input.trim()}>
-                {busy ? "Generating…" : "Generate plan"}
-              </button>
-            </div>
-          </form>
-
-          <div className="examples">
-            <span className="examples-label">Or try an example: </span>
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                className="chip"
-                type="button"
-                disabled={busy}
-                onClick={() => handleExampleClick(prompt)}
-              >
-                {prompt}
-              </button>
-            ))}
+    <div className="home-shell">
+      {idle ? <RecentRunsSidebar runs={recentRuns} /> : null}
+      <main className="page">
+        <div className="brand-row">
+          <div className="brand">
+            <div className="brand-mark" aria-hidden="true" />
+            <span className="brand-name">AI Product Engineer Copilot</span>
           </div>
+          <ThemeToggle />
+        </div>
 
-          <WhatsNextNote />
-        </>
-      ) : (
-        <RunView
-          status={status}
-          requestText={requestText}
-          events={events}
-          result={null}
-          fatalError={fatalError}
-          runId={runId}
-          questions={questions}
-          onAnswer={answer}
-          answeredQuestions={answeredQuestions}
-          prdDraft={prdDraft}
-          onResolvePrdApproval={resolvePrdApproval}
-        />
-      )}
-    </main>
+        {rateLimitMessage ? (
+          <p className="banner" role="alert" data-testid="rate-limit-banner">
+            {rateLimitMessage}
+          </p>
+        ) : null}
+
+        {/*
+          Landing (composer, examples, the deferred-capabilities note) is the
+          only thing on screen until a run starts — once it does, this whole
+          block disappears rather than lingering above the thread. A finished
+          run navigates to its own permalink instead of returning here, so
+          there's no "complete" state to design for below.
+        */}
+        {idle ? (
+          <>
+            <header className="hero">
+              <h1>AI Product Engineer Copilot</h1>
+              <p className="hero-lede">
+                Describe the product or feature you want a plan for. A multi-agent graph writes the PRD,
+                user stories, architecture review, experiment design, and roadmap.
+              </p>
+              <RateLimitNote />
+            </header>
+
+            <form className="card composer" onSubmit={handleSubmit}>
+              <textarea
+                value={input}
+                onChange={(changeEvent) => setInput(changeEvent.target.value)}
+                placeholder="Describe the product or feature you want a plan for"
+                rows={4}
+              />
+              <div className="composer-actions">
+                <button className="btn-primary" type="submit" disabled={busy || !input.trim()}>
+                  {busy ? "Generating…" : "Generate plan"}
+                </button>
+              </div>
+            </form>
+
+            <div className="examples">
+              <span className="examples-label">Or try an example: </span>
+              {EXAMPLE_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  className="chip"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleExampleClick(prompt)}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+
+            <WhatsNextNote />
+          </>
+        ) : (
+          <RunView
+            status={status}
+            requestText={requestText}
+            events={events}
+            result={null}
+            fatalError={fatalError}
+            runId={runId}
+            questions={questions}
+            onAnswer={answer}
+            answeredQuestions={answeredQuestions}
+            prdDraft={prdDraft}
+            onResolvePrdApproval={resolvePrdApproval}
+          />
+        )}
+      </main>
+    </div>
   );
 }

@@ -1,6 +1,5 @@
 import { listRecentRuns } from "../lib/results/record";
 import HomeClient from "./HomeClient";
-import { RecentRunsSidebar } from "./RecentRunsSidebar";
 
 // The recent-runs sidebar needs a fresh read on every request, not a list
 // frozen at build time — without this, Next.js would statically prerender
@@ -10,9 +9,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * Server component so the recent-runs sidebar can be fetched and rendered
- * without a client-side round trip; the interactive composer/thread/graph
- * experience is `HomeClient` (a plain sibling here, not a child prop — it
- * owns its own network calls once mounted).
+ * without a client-side round trip; `HomeClient` owns the actual layout
+ * (including whether the sidebar shows at all — hidden once a run starts)
+ * since that depends on client-side run status.
  */
 export default async function Home() {
   // Best-effort, same as the trace/result writes elsewhere (TDD 0007/0012):
@@ -24,10 +23,5 @@ export default async function Home() {
     return [];
   });
 
-  return (
-    <div className="home-shell">
-      <RecentRunsSidebar runs={runs} />
-      <HomeClient />
-    </div>
-  );
+  return <HomeClient recentRuns={runs} />;
 }
